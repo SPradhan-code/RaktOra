@@ -504,6 +504,7 @@ router.post('/register', async (req, res, next) => {
       }
     }
 
+    /* VERIFICATION CHECK COMMENTED OUT PER USER REQUEST
     if (role === 'donor') {
       if (!digilocker_verified && (!govt_id || !govt_id.trim())) {
         return res.status(400).json({
@@ -512,6 +513,7 @@ router.post('/register', async (req, res, next) => {
         });
       }
     }
+    */
 
     if (role === 'blood_bank') {
       if (!license_number || !license_number.trim()) {
@@ -522,24 +524,12 @@ router.post('/register', async (req, res, next) => {
       }
     }
 
-    // Check verification status from DB or payload
-    const emailRec = await queryOne('SELECT verified FROM otp_verifications WHERE (identifier = ? OR email = ?) AND type = "email" AND verified = 1', [email.trim().toLowerCase(), email.trim().toLowerCase()]);
-    const isEmailVerified = emailRec || email_verified ? 1 : 0;
-
-    const formattedPhone = sanitizeIndianPhone(phone);
-    const phoneRec = formattedPhone ? await queryOne('SELECT verified FROM otp_verifications WHERE (identifier = ? OR phone = ?) AND type = "phone" AND verified = 1', [formattedPhone, formattedPhone]) : null;
-    const isPhoneVerified = phoneRec || phone_verified ? 1 : 0;
-
-    const isDigiLockerVerified = digilocker_verified || aadhaar_verified ? 1 : 0;
-    const providerName = verification_provider || 'DIGILOCKER';
-    const providerRef = verification_reference || (govt_id ? govt_id.trim() : 'DIGILOCKER-VERIFIED');
-
-    if (!isEmailVerified && !isPhoneVerified) {
-      return res.status(400).json({
-        success: false,
-        message: 'Identity verification required: Please verify either your email address or phone number.'
-      });
-    }
+    // Verification checks (Commented out per user request - default all verification flags to 1)
+    const isEmailVerified = 1;
+    const isPhoneVerified = 1;
+    const isDigiLockerVerified = 1;
+    const providerName = verification_provider || 'DIRECT_REGISTRATION';
+    const providerRef = verification_reference || 'DIRECT-REGISTERED';
 
     // Hash password
     const passwordHash = await bcrypt.hash(password, 10);

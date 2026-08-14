@@ -226,10 +226,12 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    /* VERIFICATION ENFORCEMENT COMMENTED OUT PER USER REQUEST
     if (!emailVerified && !phoneVerified) {
       showToast('Please verify either your Email address or Phone number before completing registration', 'error');
       return;
     }
+    */
 
     // Bot Protection CAPTCHA Verification
     if (parseInt(userCaptcha) !== num1 + num2) {
@@ -237,13 +239,14 @@ export default function Register() {
       return;
     }
 
-    // Role-specific Verification Checks
+    /* AADHAAR / DIGILOCKER ENFORCEMENT COMMENTED OUT PER USER REQUEST
     if (role === 'donor') {
       if (!formData.govt_id || formData.govt_id.trim().length < 5) {
         showToast('Aadhaar / Govt Photo ID verification is required for voluntary donor registration', 'error');
         return;
       }
     }
+    */
 
     if (role === 'blood_bank') {
       if (!formData.license_number || formData.license_number.trim().length < 5) {
@@ -512,222 +515,12 @@ export default function Register() {
 
           </div>
 
-          {/* ============================================================================ */}
-          {/* VERIFICATION SECTION: CHOOSE EMAIL OR PHONE SMS OTP VERIFICATION */}
-          {/* ============================================================================ */}
+          {/* VERIFICATION SECTION COMMENTED OUT PER USER REQUEST */}
+          {/*
           <div className="space-y-4 pt-2">
-            
-            <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Select Verification Method (Verify 1 Required)
-                </span>
-                {(emailVerified || phoneVerified) && (
-                  <span className="text-emerald-700 text-[11px] font-extrabold flex items-center bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300">
-                    <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                    {emailVerified ? 'Email Verified' : 'Phone Verified'}
-                  </span>
-                )}
-              </div>
-
-              {/* Verification Method Chooser Tabs */}
-              <div className="grid grid-cols-2 gap-2 bg-slate-200/70 p-1 rounded-xl text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setVerificationMethod('email')}
-                  className={`py-2 px-3 rounded-lg flex items-center justify-center space-x-2 transition-all ${
-                    verificationMethod === 'email'
-                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Mail className="w-4 h-4 text-red-600" />
-                  <span>Verify via Email</span>
-                  {emailVerified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 ml-1" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVerificationMethod('phone')}
-                  className={`py-2 px-3 rounded-lg flex items-center justify-center space-x-2 transition-all ${
-                    verificationMethod === 'phone'
-                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Smartphone className="w-4 h-4 text-red-600" />
-                  <span>Verify via Phone SMS</span>
-                  {phoneVerified && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 ml-1" />}
-                </button>
-              </div>
-
-              {/* Method 1: Email OTP */}
-              {verificationMethod === 'email' && (
-                <div className="pt-2 space-y-3">
-                  {!emailVerified ? (
-                    <div className="space-y-2">
-                      <p className="text-xs text-slate-600 font-medium">
-                        Verification code will be sent to email: <strong className="text-slate-800">{formData.email || 'your email'}</strong>
-                      </p>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="Enter 6-digit Email OTP"
-                          value={emailOtp}
-                          onChange={(e) => setEmailOtp(e.target.value)}
-                          className="flex-1 bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-mono tracking-wider focus:ring-2 focus:ring-red-500 focus:outline-none"
-                        />
-                        {!emailSent ? (
-                          <button
-                            type="button"
-                            disabled={emailLoading}
-                            onClick={handleSendEmailOtp}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all"
-                          >
-                            {emailLoading ? 'Sending...' : 'Send OTP'}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={emailLoading}
-                            onClick={handleVerifyEmailOtp}
-                            className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all shadow-sm"
-                          >
-                            {emailLoading ? 'Verifying...' : 'Verify Email'}
-                          </button>
-                        )}
-                      </div>
-
-                      {emailSent && (
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
-                          <span>OTP sent to email address</span>
-                          {emailCooldown > 0 ? (
-                            <span className="text-slate-400 font-medium">Resend in {emailCooldown}s</span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={handleSendEmailOtp}
-                              className="text-red-600 font-bold hover:underline"
-                            >
-                              Resend Email OTP
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl text-emerald-800 text-xs font-semibold flex items-center space-x-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      <span>Your email address ({formData.email}) is verified.</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Method 2: Phone SMS OTP */}
-              {verificationMethod === 'phone' && (
-                <div className="pt-2 space-y-3">
-                  {!phoneVerified ? (
-                    <div className="space-y-2">
-                      <p className="text-xs text-slate-600 font-medium">
-                        SMS OTP code will be sent to phone: <strong className="text-slate-800">{formData.phone || 'your phone number'}</strong>
-                      </p>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="Enter 6-digit SMS OTP"
-                          value={phoneOtp}
-                          onChange={(e) => setPhoneOtp(e.target.value)}
-                          className="flex-1 bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-sm font-mono tracking-wider focus:ring-2 focus:ring-red-500 focus:outline-none"
-                        />
-                        {!phoneSent ? (
-                          <button
-                            type="button"
-                            disabled={phoneLoading}
-                            onClick={handleSendPhoneOtp}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all"
-                          >
-                            {phoneLoading ? 'Sending...' : 'Send OTP'}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={phoneLoading}
-                            onClick={handleVerifyPhoneOtp}
-                            className="bg-red-600 hover:bg-red-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all shadow-sm"
-                          >
-                            {phoneLoading ? 'Verifying...' : 'Verify Phone'}
-                          </button>
-                        )}
-                      </div>
-
-                      {phoneSent && (
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
-                          <span>SMS OTP sent to {formData.phone}</span>
-                          {phoneCooldown > 0 ? (
-                            <span className="text-slate-400 font-medium">Resend in {phoneCooldown}s</span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={handleSendPhoneOtp}
-                              className="text-red-600 font-bold hover:underline"
-                            >
-                              Resend SMS OTP
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl text-emerald-800 text-xs font-semibold flex items-center space-x-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      <span>Your phone number ({formData.phone}) is verified.</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* 3. AADHAAR OFFLINE E-KYC VERIFICATION (REQUIRED FOR DONORS) */}
-            {role === 'donor' && (
-              <div className="bg-gradient-to-br from-blue-50/80 to-slate-50 border border-blue-200 p-4.5 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2 text-xs font-bold text-blue-950 uppercase">
-                    <ShieldCheck className="w-4.5 h-4.5 text-blue-600" />
-                    <span>Verify Identity with DigiLocker</span>
-                  </div>
-                  {aadhaarVerified && (
-                    <span className="text-emerald-700 text-[11px] font-extrabold flex items-center bg-emerald-100 px-2 py-0.5 rounded-md">
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" /> DigiLocker Verified
-                    </span>
-                  )}
-                </div>
-
-                {!aadhaarVerified ? (
-                  <div className="space-y-3">
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      Connect your official <strong>DigiLocker account</strong> to securely verify your identity for voluntary blood donation without uploading sensitive documents.
-                    </p>
-
-                    <button
-                      type="button"
-                      disabled={aadhaarLoading}
-                      onClick={handleContinueWithDigiLocker}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition-all flex items-center justify-center space-x-2 shadow-sm shadow-blue-200"
-                    >
-                      <ExternalLink className="w-4 h-4 text-blue-100" />
-                      <span>{aadhaarLoading ? 'Connecting to DigiLocker...' : 'Continue with DigiLocker'}</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="bg-emerald-100/80 border border-emerald-300 p-3 rounded-xl flex items-center space-x-2 text-emerald-900 text-xs font-semibold">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <span>DigiLocker Identity Verified for: <strong>{aadhaarHolderName}</strong></span>
-                  </div>
-                )}
-              </div>
-            )}
-
+            ...
           </div>
+          */}
 
           {/* Anti-Bot Security Math Challenge */}
           <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl flex items-center justify-between gap-3">
