@@ -25,7 +25,7 @@ function sanitizeIndianPhone(phone) {
 async function sendSmsOtp(phone, otpCode) {
   const formattedPhone = sanitizeIndianPhone(phone);
   if (!formattedPhone) {
-    return { success: false, error: 'Invalid Indian phone number format. Must be +91 followed by 10 digits.' };
+    return { success: false, error: 'Invalid Indian phone number format. Use 10-digit number or +91 format.' };
   }
 
   const authKey = process.env.MSG91_AUTH_KEY;
@@ -33,8 +33,12 @@ async function sendSmsOtp(phone, otpCode) {
   const senderId = process.env.MSG91_SENDER_ID || 'RAKTOR';
 
   if (!authKey || !templateId) {
-    console.log(`[SMS SERVICE] Provider MSG91 keys unconfigured. Simulated SMS dispatch to +${formattedPhone}`);
-    return { success: true, simulated: true };
+    if (process.env.OTP_DEV_MODE === 'true') {
+      console.log(`[SMS SERVICE - DEV MODE] MSG91 keys missing, but OTP_DEV_MODE=true. SMS OTP for +${formattedPhone}: ${otpCode}`);
+      return { success: true, devMode: true, message: 'OTP dispatched (Development Mode)' };
+    }
+    console.error(`[SMS SERVICE CONFIG ERROR] MSG91_AUTH_KEY or MSG91_TEMPLATE_ID environment variables missing.`);
+    return { success: false, error: 'SMS service configuration missing. MSG91_AUTH_KEY and MSG91_TEMPLATE_ID are required.' };
   }
 
   const postData = JSON.stringify({
@@ -48,11 +52,18 @@ async function sendSmsOtp(phone, otpCode) {
     ]
   });
 
+  const queryParams = new URLSearchParams({
+    template_id: templateId,
+    mobile: formattedPhone,
+    authkey: authKey,
+    otp: otpCode
+  }).toString();
+
   return new Promise((resolve) => {
     const req = https.request({
       hostname: 'control.msg91.com',
       port: 443,
-      path: '/api/v5/otp',
+      path: `/api/v5/otp?${queryParams}`,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -63,11 +74,17 @@ async function sendSmsOtp(phone, otpCode) {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve({ success: true });
+        let parsed = null;
+        try {
+          parsed = JSON.parse(body);
+        } catch (e) {}
+
+        if (res.statusCode >= 200 && res.statusCode < 300 && (!parsed || parsed.type !== 'error')) {
+          resolve({ success: true, message: parsed?.message || 'SMS OTP sent successfully' });
         } else {
+          const errorMsg = parsed?.message || parsed?.error || `MSG91 status ${res.statusCode}`;
           console.error(`[SMS SERVICE ERROR] MSG91 status ${res.statusCode}:`, body);
-          resolve({ success: false, error: 'SMS Provider API error' });
+          resolve({ success: false, error: `MSG91 SMS Error: ${errorMsg}` });
         }
       });
     });

@@ -11,8 +11,12 @@ async function sendEmailOtp(toEmail, otpCode) {
   const fromEmail = process.env.EMAIL_FROM || 'RaktOra Verification <onboarding@resend.dev>';
 
   if (!apiKey) {
-    console.log(`[EMAIL SERVICE] Provider RESEND_API_KEY not configured. Simulated dispatch to ${toEmail}`);
-    return { success: true, simulated: true };
+    if (process.env.OTP_DEV_MODE === 'true') {
+      console.log(`[EMAIL SERVICE - DEV MODE] RESEND_API_KEY missing, but OTP_DEV_MODE=true. OTP for ${toEmail}: ${otpCode}`);
+      return { success: true, devMode: true, message: 'OTP dispatched (Development Mode)' };
+    }
+    console.error(`[EMAIL SERVICE CONFIG ERROR] RESEND_API_KEY environment variable is missing.`);
+    return { success: false, error: 'Email service configuration missing. RESEND_API_KEY is required.' };
   }
 
   const htmlContent = `
@@ -42,7 +46,7 @@ async function sendEmailOtp(toEmail, otpCode) {
     html: htmlContent
   });
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const req = https.request({
       hostname: 'api.resend.com',
       port: 443,
@@ -60,8 +64,15 @@ async function sendEmailOtp(toEmail, otpCode) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve({ success: true, status: res.statusCode });
         } else {
+          let errorMsg = `Resend API status ${res.statusCode}`;
+          try {
+            const parsed = JSON.parse(body);
+            if (parsed && parsed.message) {
+              errorMsg = parsed.message;
+            }
+          } catch (e) {}
           console.error(`[EMAIL SERVICE ERROR] Resend API status ${res.statusCode}:`, body);
-          resolve({ success: false, error: 'Provider returned error status' });
+          resolve({ success: false, error: errorMsg });
         }
       });
     });

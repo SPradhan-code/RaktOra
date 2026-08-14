@@ -91,16 +91,18 @@ router.post('/send-email-otp', async (req, res, next) => {
     const dispatchResult = await sendEmailOtp(cleanEmail, otpCode);
 
     if (!dispatchResult.success) {
-      return res.status(500).json({
+      return res.status(400).json({
         success: false,
-        message: 'Unable to send OTP right now. Please try again later.'
+        message: dispatchResult.error || 'Unable to send Email OTP. Please try again later.'
       });
     }
 
     // NEVER expose plain OTP in JSON response
     return res.json({
       success: true,
-      message: `OTP sent successfully to ${cleanEmail}.`
+      message: dispatchResult.devMode 
+        ? `[DEV MODE] OTP generated & logged to server console for ${cleanEmail}.` 
+        : `OTP sent successfully to ${cleanEmail}.`
     });
 
   } catch (error) {
@@ -226,16 +228,18 @@ router.post('/send-phone-otp', async (req, res, next) => {
     const dispatchResult = await sendSmsOtp(formattedPhone, otpCode);
 
     if (!dispatchResult.success) {
-      return res.status(500).json({
+      return res.status(400).json({
         success: false,
-        message: 'Unable to send OTP right now. Please try again later.'
+        message: dispatchResult.error || 'Unable to send SMS OTP. Please try again later.'
       });
     }
 
     // NEVER expose plain OTP in JSON response
     return res.json({
       success: true,
-      message: `OTP sent successfully to +${formattedPhone}.`
+      message: dispatchResult.devMode
+        ? `[DEV MODE] SMS OTP generated & logged to server console for +${formattedPhone}.`
+        : `OTP sent successfully to +${formattedPhone}.`
     });
 
   } catch (error) {
