@@ -1,0 +1,31 @@
+{
+  "name": "blood-connect",
+  "version": "1.0.0",
+  "description": "BloodConnect - Blood Donor Management System Monorepo",
+  "main": "backend/server.js",
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "build": "npm install --prefix backend && npm install --prefix frontend && npm run build --prefix frontend",
+    "start": "cd backend && node server.js",
+    "seed": "cd backend && npm run seed"
+  },
+  "keywords": [
+    "blood-donation",
+    "react",
+    "express",
+    "mysql",
+    "render"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "adm-zip": "^0.6.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.23.3"
+  }
+}
