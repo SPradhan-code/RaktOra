@@ -55,8 +55,8 @@ router.post('/send-email-otp', async (req, res, next) => {
 
     // 60-Second Resend Cooldown Check
     const latest = await queryOne(
-      'SELECT created_at FROM otp_verifications WHERE identifier = ? AND type = "email" ORDER BY id DESC LIMIT 1',
-      [cleanEmail]
+      'SELECT created_at FROM otp_verifications WHERE (identifier = ? OR email = ?) AND type = "email" ORDER BY id DESC LIMIT 1',
+      [cleanEmail, cleanEmail]
     );
 
     if (latest && latest.created_at) {
@@ -76,15 +76,15 @@ router.post('/send-email-otp', async (req, res, next) => {
 
     // Invalidate previous unverified OTPs
     await execute(
-      'UPDATE otp_verifications SET verified = 1 WHERE identifier = ? AND type = "email" AND verified = 0',
-      [cleanEmail]
+      'UPDATE otp_verifications SET verified = 1 WHERE (identifier = ? OR email = ?) AND type = "email" AND verified = 0',
+      [cleanEmail, cleanEmail]
     );
 
     // Store hash + 5 minute expiry in DB
     await execute(
-      `INSERT INTO otp_verifications (identifier, type, otp_hash, expires_at, attempts, verified)
-       VALUES (?, 'email', ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0, 0)`,
-      [cleanEmail, otpHash]
+      `INSERT INTO otp_verifications (identifier, email, type, otp_hash, expires_at, attempts, verified)
+       VALUES (?, ?, 'email', ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0, 0)`,
+      [cleanEmail, cleanEmail, otpHash]
     );
 
     // Dispatch via Resend Email Service
@@ -125,9 +125,9 @@ router.post('/verify-email-otp', async (req, res, next) => {
 
     const record = await queryOne(
       `SELECT * FROM otp_verifications 
-       WHERE identifier = ? AND type = 'email' AND verified = 0 
+       WHERE (identifier = ? OR email = ?) AND type = 'email' AND verified = 0 
        ORDER BY id DESC LIMIT 1`,
-      [cleanEmail]
+      [cleanEmail, cleanEmail]
     );
 
     if (!record) {
@@ -192,8 +192,8 @@ router.post('/send-phone-otp', async (req, res, next) => {
 
     // 60-Second Resend Cooldown Check
     const latest = await queryOne(
-      'SELECT created_at FROM otp_verifications WHERE identifier = ? AND type = "phone" ORDER BY id DESC LIMIT 1',
-      [formattedPhone]
+      'SELECT created_at FROM otp_verifications WHERE (identifier = ? OR phone = ?) AND type = "phone" ORDER BY id DESC LIMIT 1',
+      [formattedPhone, formattedPhone]
     );
 
     if (latest && latest.created_at) {
@@ -213,15 +213,15 @@ router.post('/send-phone-otp', async (req, res, next) => {
 
     // Invalidate previous unverified OTPs
     await execute(
-      'UPDATE otp_verifications SET verified = 1 WHERE identifier = ? AND type = "phone" AND verified = 0',
-      [formattedPhone]
+      'UPDATE otp_verifications SET verified = 1 WHERE (identifier = ? OR phone = ?) AND type = "phone" AND verified = 0',
+      [formattedPhone, formattedPhone]
     );
 
     // Store hash + 5 minute expiry
     await execute(
-      `INSERT INTO otp_verifications (identifier, type, otp_hash, expires_at, attempts, verified)
-       VALUES (?, 'phone', ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0, 0)`,
-      [formattedPhone, otpHash]
+      `INSERT INTO otp_verifications (identifier, phone, type, otp_hash, expires_at, attempts, verified)
+       VALUES (?, ?, 'phone', ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0, 0)`,
+      [formattedPhone, formattedPhone, otpHash]
     );
 
     // Dispatch via MSG91 SMS Service
@@ -266,9 +266,9 @@ router.post('/verify-phone-otp', async (req, res, next) => {
 
     const record = await queryOne(
       `SELECT * FROM otp_verifications 
-       WHERE identifier = ? AND type = 'phone' AND verified = 0 
+       WHERE (identifier = ? OR phone = ?) AND type = 'phone' AND verified = 0 
        ORDER BY id DESC LIMIT 1`,
-      [formattedPhone]
+      [formattedPhone, formattedPhone]
     );
 
     if (!record) {
@@ -437,11 +437,11 @@ router.post('/register', async (req, res, next) => {
     }
 
     // Check verification status from DB or payload
-    const emailRec = await queryOne('SELECT verified FROM otp_verifications WHERE identifier = ? AND type = "email" AND verified = 1', [email.trim().toLowerCase()]);
+    const emailRec = await queryOne('SELECT verified FROM otp_verifications WHERE (identifier = ? OR email = ?) AND type = "email" AND verified = 1', [email.trim().toLowerCase(), email.trim().toLowerCase()]);
     const isEmailVerified = emailRec || email_verified ? 1 : 0;
 
     const formattedPhone = sanitizeIndianPhone(phone);
-    const phoneRec = formattedPhone ? await queryOne('SELECT verified FROM otp_verifications WHERE identifier = ? AND type = "phone" AND verified = 1', [formattedPhone]) : null;
+    const phoneRec = formattedPhone ? await queryOne('SELECT verified FROM otp_verifications WHERE (identifier = ? OR phone = ?) AND type = "phone" AND verified = 1', [formattedPhone, formattedPhone]) : null;
     const isPhoneVerified = phoneRec || phone_verified ? 1 : 0;
     const isAadhaarVerified = aadhaar_verified ? 1 : 0;
 

@@ -243,12 +243,14 @@ const pool = mysql.createPool(connectionConfig);
       await connection.query('CREATE INDEX idx_notif_dedup ON Notifications (user_id, dedup_key)');
     } catch (e) {}
 
-    // 13. Ensure otp_verifications table exists
+    // 13. Ensure otp_verifications table exists and has all backward-compatible columns (identifier, email, phone)
     await connection.query(`
       CREATE TABLE IF NOT EXISTS otp_verifications (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT NULL,
-        identifier VARCHAR(150) NOT NULL,
+        identifier VARCHAR(150) NULL,
+        email VARCHAR(150) NULL,
+        phone VARCHAR(150) NULL,
         type ENUM('email', 'phone') NOT NULL,
         otp_hash VARCHAR(255) NOT NULL,
         expires_at DATETIME NOT NULL,
@@ -260,6 +262,12 @@ const pool = mysql.createPool(connectionConfig);
         INDEX idx_otp_expires (expires_at)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
+
+    // Ensure columns identifier, email, phone exist on otp_verifications regardless of when table was created
+    try { await connection.query('ALTER TABLE otp_verifications ADD COLUMN identifier VARCHAR(150) NULL'); } catch (e) {}
+    try { await connection.query('ALTER TABLE otp_verifications ADD COLUMN email VARCHAR(150) NULL'); } catch (e) {}
+    try { await connection.query('ALTER TABLE otp_verifications ADD COLUMN phone VARCHAR(150) NULL'); } catch (e) {}
+    try { await connection.query('ALTER TABLE Users ADD COLUMN email VARCHAR(100) NULL'); } catch (e) {}
 
     connection.release();
   } catch (err) {
