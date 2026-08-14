@@ -63,12 +63,18 @@ const pool = mysql.createPool(connectionConfig);
       await connection.query('ALTER TABLE Donors ADD COLUMN health_notes TEXT NULL');
     } catch (e) {}
 
-    // 4. Ensure Users table has verification flag columns
-    const userColumns = ['email_verified', 'phone_verified', 'aadhaar_verified', 'email_verified_at', 'phone_verified_at', 'aadhaar_verified_at'];
+    // 4. Ensure Users table has verification flag & DigiLocker columns
+    const userColumns = [
+      'email_verified', 'phone_verified', 'aadhaar_verified', 
+      'email_verified_at', 'phone_verified_at', 'aadhaar_verified_at',
+      'digilocker_verified', 'digilocker_verified_at', 'verification_provider', 'verification_reference'
+    ];
     for (const col of userColumns) {
       try {
         if (col.endsWith('_at')) {
           await connection.query(`ALTER TABLE Users ADD COLUMN ${col} DATETIME NULL`);
+        } else if (col.startsWith('verification_')) {
+          await connection.query(`ALTER TABLE Users ADD COLUMN ${col} VARCHAR(150) NULL`);
         } else {
           await connection.query(`ALTER TABLE Users ADD COLUMN ${col} TINYINT(1) NOT NULL DEFAULT 0`);
         }

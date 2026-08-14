@@ -10,9 +10,19 @@ const { JWT_SECRET, authenticateToken } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../utils/encryption');
 const { sendEmailOtp } = require('../services/emailService');
 const { sanitizeIndianPhone, sendSmsOtp } = require('../services/smsService');
-const { processAadhaarOfflineEkyc } = require('../services/aadhaarService');
+const {
+  generateCodeVerifier,
+  generateCodeChallenge,
+  generateStateToken,
+  getDigiLockerAuthUrl,
+  exchangeDigiLockerCode,
+  fetchDigiLockerUserDocuments
+} = require('../services/digilockerService');
 
-// Multer memory storage for Aadhaar e-KYC ZIP upload
+// Temporary in-memory CSRF & PKCE state cache for DigiLocker OAuth (10-min TTL)
+const digilockerStateStore = new Map();
+
+// Multer memory storage for uploads
 const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
@@ -334,38 +344,113 @@ router.post('/verify-otp', async (req, res, next) => {
 });
 
 // ============================================================================
-// 5. AADHAAR OFFLINE E-KYC VERIFICATION (POST /api/auth/verify-aadhaar-ekyc)
+// 5. DIGILOCKER OAUTH 2.0 VERIFICATION ENDPOINTS
 // ============================================================================
-router.post('/verify-aadhaar-ekyc', upload.single('zipFile'), async (req, res, next) => {
+
+/**
+ * Initiates official DigiLocker OAuth 2.0 verification flow
+ * GET /api/auth/digilocker/initiate
+ */
+router.get('/digilocker/initiate', (req, res) => {
   try {
-    const shareCode = req.body.shareCode;
-    const fileBuffer = req.file ? req.file.buffer : null;
+    const state = generateStateToken();
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = generateCodeChallenge(codeVerifier);
 
-    if (!fileBuffer) {
-      return res.status(400).json({ success: false, message: 'Please upload a valid UIDAI Aadhaar Offline e-KYC ZIP file.' });
+    // Store in-memory with 10 minute expiration
+    digilockerStateStore.set(state, {
+      codeVerifier,
+      created_at: Date.now()
+    });
+
+    // Cleanup expired states (> 10 mins)
+    for (const [sKey, val] of digilockerStateStore.entries()) {
+      if (Date.now() - val.created_at > 10 * 60 * 1000) {
+        digilockerStateStore.delete(sKey);
+      }
     }
 
-    if (!shareCode || shareCode.toString().trim().length < 4) {
-      return res.status(400).json({ success: false, message: 'Valid 4-digit Share Code is required.' });
-    }
+    const authRes = getDigiLockerAuthUrl(state, codeChallenge);
 
-    const verificationResult = await processAadhaarOfflineEkyc(fileBuffer, shareCode);
-
-    if (!verificationResult.success) {
-      return res.status(400).json({ success: false, message: verificationResult.error });
+    if (!authRes.success) {
+      return res.status(400).json({
+        success: false,
+        message: authRes.error
+      });
     }
 
     return res.json({
       success: true,
-      message: 'Aadhaar Offline e-KYC verified successfully!',
-      reference: verificationResult.reference,
-      holder_name: verificationResult.name,
-      verified_at: verificationResult.verified_at
+      auth_url: authRes.auth_url,
+      state: state,
+      devMode: !!authRes.devMode
     });
-
   } catch (error) {
-    next(error);
+    return res.status(500).json({ success: false, message: 'Failed to initiate DigiLocker verification.' });
   }
+});
+
+/**
+ * Handles official DigiLocker OAuth 2.0 Redirect Callback
+ * GET /api/auth/digilocker/callback
+ */
+router.get('/digilocker/callback', async (req, res) => {
+  const { code, state, error, error_description } = req.query;
+  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+
+  // 1. Handle DigiLocker user cancellation / denied consent
+  if (error || error_description) {
+    const errorMsg = error_description || error || 'User cancelled DigiLocker authorization.';
+    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent(errorMsg)}`);
+  }
+
+  if (!state || !code) {
+    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent('Missing authorization code or state parameter.')}`);
+  }
+
+  // 2. Validate CSRF State Token
+  const storedState = digilockerStateStore.get(state);
+  if (!storedState) {
+    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent('Invalid or expired DigiLocker session state. Please try again.')}`);
+  }
+
+  const { codeVerifier } = storedState;
+  digilockerStateStore.delete(state);
+
+  // 3. Perform Token Exchange with DigiLocker API
+  const tokenRes = await exchangeDigiLockerCode(code, codeVerifier);
+
+  if (!tokenRes.success) {
+    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent(tokenRes.error)}`);
+  }
+
+  // 4. Retrieve Document Verification Metadata (without storing plaintext sensitive data)
+  const docRes = await fetchDigiLockerUserDocuments(tokenRes.access_token);
+  const refCode = tokenRes.digilocker_id || `DIGILOCKER-${Date.now()}`;
+  const holderName = tokenRes.name || 'DigiLocker Verified User';
+
+  return res.redirect(
+    `${frontendUrl}/register?digilocker_verified=true&holder_name=${encodeURIComponent(holderName)}&reference=${encodeURIComponent(refCode)}`
+  );
+});
+
+/**
+ * Controlled Development Mode Callback (only enabled when DIGILOCKER_DEV_MODE=true)
+ * GET /api/auth/digilocker/dev-callback
+ */
+router.get('/digilocker/dev-callback', (req, res) => {
+  if (process.env.DIGILOCKER_DEV_MODE !== 'true') {
+    return res.status(400).json({ success: false, message: 'Development callback is disabled.' });
+  }
+
+  console.log('[DIGILOCKER DEV MODE] Simulating DigiLocker authorization redirect callback.');
+  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const holderName = 'DigiLocker Dev User';
+  const reference = `DIGILOCKER-DEV-${Date.now()}`;
+
+  return res.redirect(
+    `${frontendUrl}/register?digilocker_verified=true&dev_mode=true&holder_name=${encodeURIComponent(holderName)}&reference=${encodeURIComponent(reference)}`
+  );
 });
 
 // ============================================================================
@@ -376,7 +461,8 @@ router.post('/register', async (req, res, next) => {
     const { 
       full_name, email, password, phone, role, state, city, pincode, 
       blood_group, age, gender, weight, address, license_number, bank_name, emergency_contact, relationship,
-      govt_id, admin_secret, email_verified, phone_verified, aadhaar_verified
+      govt_id, admin_secret, email_verified, phone_verified, aadhaar_verified,
+      digilocker_verified, verification_provider, verification_reference
     } = req.body;
 
     // Field Validation
@@ -419,10 +505,10 @@ router.post('/register', async (req, res, next) => {
     }
 
     if (role === 'donor') {
-      if (!govt_id || !govt_id.trim()) {
+      if (!digilocker_verified && (!govt_id || !govt_id.trim())) {
         return res.status(400).json({
           success: false,
-          message: 'Govt ID / Aadhaar verification is mandatory for voluntary donor verification.'
+          message: 'DigiLocker Identity verification is required for voluntary donor registration.'
         });
       }
     }
@@ -443,7 +529,10 @@ router.post('/register', async (req, res, next) => {
     const formattedPhone = sanitizeIndianPhone(phone);
     const phoneRec = formattedPhone ? await queryOne('SELECT verified FROM otp_verifications WHERE (identifier = ? OR phone = ?) AND type = "phone" AND verified = 1', [formattedPhone, formattedPhone]) : null;
     const isPhoneVerified = phoneRec || phone_verified ? 1 : 0;
-    const isAadhaarVerified = aadhaar_verified ? 1 : 0;
+
+    const isDigiLockerVerified = digilocker_verified || aadhaar_verified ? 1 : 0;
+    const providerName = verification_provider || 'DIGILOCKER';
+    const providerRef = verification_reference || (govt_id ? govt_id.trim() : 'DIGILOCKER-VERIFIED');
 
     if (!isEmailVerified && !isPhoneVerified) {
       return res.status(400).json({
@@ -457,14 +546,16 @@ router.post('/register', async (req, res, next) => {
 
     // Insert User into MySQL
     const userResult = await execute(
-      `INSERT INTO Users (full_name, email, password_hash, phone, role, state, city, pincode, is_verified, email_verified, phone_verified, aadhaar_verified, email_verified_at, phone_verified_at, aadhaar_verified_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Users (full_name, email, password_hash, phone, role, state, city, pincode, is_verified, email_verified, phone_verified, aadhaar_verified, digilocker_verified, email_verified_at, phone_verified_at, aadhaar_verified_at, digilocker_verified_at, verification_provider, verification_reference)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         full_name, email.trim().toLowerCase(), passwordHash, phone.trim(), role, state, city, pincode || null,
-        isEmailVerified, isPhoneVerified, isAadhaarVerified,
+        isEmailVerified, isPhoneVerified, isDigiLockerVerified, isDigiLockerVerified,
         isEmailVerified ? new Date() : null,
         isPhoneVerified ? new Date() : null,
-        isAadhaarVerified ? new Date() : null
+        isDigiLockerVerified ? new Date() : null,
+        isDigiLockerVerified ? new Date() : null,
+        providerName, providerRef
       ]
     );
 

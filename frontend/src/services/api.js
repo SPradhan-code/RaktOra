@@ -43,9 +43,7 @@ export const sendEmailOtp = (data) => api.post('/auth/send-email-otp', data);
 export const verifyEmailOtp = (data) => api.post('/auth/verify-email-otp', data);
 export const sendPhoneOtp = (data) => api.post('/auth/send-phone-otp', data);
 export const verifyPhoneOtp = (data) => api.post('/auth/verify-phone-otp', data);
-export const verifyAadhaarEkyc = (formData) => api.post('/auth/verify-aadhaar-ekyc', formData, {
-  headers: { 'Content-Type': 'multipart/form-data' }
-});
+export const initiateDigiLockerVerification = () => api.get('/auth/digilocker/initiate');
 export const getCurrentUser = () => api.get('/auth/me');
 export const forgotPassword = (email) => api.post('/auth/forgot-password', { email });
 export const deleteMyAccount = () => api.delete('/auth/me');

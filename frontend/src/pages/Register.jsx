@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, Mail, Phone, Lock, MapPin, Building2, Droplets, ShieldCheck, CheckCircle2, KeyRound, ShieldAlert, FileText, Cpu, Upload, Smartphone } from 'lucide-react';
+import { User, Mail, Phone, Lock, MapPin, Building2, Droplets, ShieldCheck, CheckCircle2, KeyRound, ShieldAlert, FileText, Cpu, Upload, Smartphone, ExternalLink } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { INDIAN_STATES, getCitiesForState } from '../data/indianStatesAndCities';
-import { sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, verifyAadhaarEkyc } from '../services/api';
+import { sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, initiateDigiLockerVerification } from '../services/api';
 import { encryptPayload } from '../utils/cryptoUtils';
 import RaktOraLogo from '../components/RaktOraLogo';
 
@@ -79,6 +79,32 @@ export default function Register() {
     }
     return () => clearInterval(timer);
   }, [phoneCooldown]);
+
+  // DigiLocker OAuth Callback Listener
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const digilockerVerified = params.get('digilocker_verified');
+    const digilockerError = params.get('digilocker_error');
+    const holderName = params.get('holder_name');
+    const reference = params.get('reference');
+
+    if (digilockerVerified === 'true') {
+      setAadhaarVerified(true);
+      setAadhaarHolderName(holderName || 'DigiLocker Verified User');
+      setFormData(prev => ({
+        ...prev,
+        govt_id: reference || 'DIGILOCKER-VERIFIED',
+        digilocker_verified: true,
+        verification_provider: 'DIGILOCKER',
+        verification_reference: reference || 'DIGILOCKER-VERIFIED'
+      }));
+      showToast(`✓ DigiLocker Identity verified! (${holderName || 'Verified'})`, 'success');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (digilockerError) {
+      showToast(`DigiLocker Verification Failed: ${digilockerError}`, 'error');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   const handleStateChange = (newSt) => {
     const cities = getCitiesForState(newSt);
@@ -173,34 +199,24 @@ export default function Register() {
     }
   };
 
-  // 3. Aadhaar Offline e-KYC Verification Handler
-  const handleVerifyAadhaarEkyc = async (e) => {
-    e.preventDefault();
-    if (!aadhaarFile) {
-      showToast('Please select your official UIDAI Aadhaar Offline e-KYC ZIP file.', 'error');
-      return;
-    }
-
-    if (!aadhaarShareCode || aadhaarShareCode.trim().length < 4) {
-      showToast('Please enter the 4-digit Share Code for your e-KYC ZIP file.', 'error');
-      return;
-    }
-
+  // 3. DigiLocker Identity Verification Handler
+  const handleContinueWithDigiLocker = async () => {
     setAadhaarLoading(true);
     try {
-      const data = new FormData();
-      data.append('zipFile', aadhaarFile);
-      data.append('shareCode', aadhaarShareCode.trim());
-
-      const res = await verifyAadhaarEkyc(data);
-      if (res.success) {
-        setAadhaarVerified(true);
-        setAadhaarHolderName(res.holder_name || 'Aadhaar Verified Holder');
-        setFormData(prev => ({ ...prev, govt_id: res.reference || 'AADHAAR-EKYC-VERIFIED' }));
-        showToast(`✓ Aadhaar Offline e-KYC verified! (${res.holder_name || 'Verified'})`, 'success');
+      const res = await initiateDigiLockerVerification();
+      if (res.success && res.auth_url) {
+        if (res.auth_url.startsWith('http://') || res.auth_url.startsWith('https://')) {
+          window.location.href = res.auth_url;
+        } else {
+          // Dev mode local redirect
+          const backendUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '');
+          window.location.href = `${backendUrl}${res.auth_url}`;
+        }
+      } else {
+        showToast(res.message || 'Unable to start DigiLocker verification.', 'error');
       }
     } catch (err) {
-      showToast(err.message || 'Aadhaar e-KYC verification failed. Check share code.', 'error');
+      showToast(err.message || 'DigiLocker service configuration missing or unavailable.', 'error');
     } finally {
       setAadhaarLoading(false);
     }
@@ -673,15 +689,15 @@ export default function Register() {
 
             {/* 3. AADHAAR OFFLINE E-KYC VERIFICATION (REQUIRED FOR DONORS) */}
             {role === 'donor' && (
-              <div className="bg-red-50/60 border border-red-200 p-4 rounded-2xl space-y-3">
+              <div className="bg-gradient-to-br from-blue-50/80 to-slate-50 border border-blue-200 p-4.5 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2 text-xs font-bold text-red-900 uppercase">
-                    <FileText className="w-4 h-4 text-red-600" />
-                    <span>Aadhaar Verification (UIDAI Offline e-KYC)</span>
+                  <div className="flex items-center space-x-2 text-xs font-bold text-blue-950 uppercase">
+                    <ShieldCheck className="w-4.5 h-4.5 text-blue-600" />
+                    <span>Verify Identity with DigiLocker</span>
                   </div>
                   {aadhaarVerified && (
                     <span className="text-emerald-700 text-[11px] font-extrabold flex items-center bg-emerald-100 px-2 py-0.5 rounded-md">
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" /> Aadhaar Verified
+                      <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600" /> DigiLocker Verified
                     </span>
                   )}
                 </div>
@@ -689,47 +705,23 @@ export default function Register() {
                 {!aadhaarVerified ? (
                   <div className="space-y-3">
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      Your Aadhaar identity must be verified before you can complete donor registration. Upload your official <strong>UIDAI Offline e-KYC ZIP</strong> file and enter its 4-digit Share Code.
+                      Connect your official <strong>DigiLocker account</strong> to securely verify your identity for voluntary blood donation without uploading sensitive documents.
                     </p>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Upload e-KYC ZIP *</label>
-                        <input
-                          type="file"
-                          accept=".zip"
-                          onChange={(e) => setAadhaarFile(e.target.files[0])}
-                          className="w-full bg-white text-xs border border-slate-200 rounded-xl px-2 py-1.5 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Share Code (4-digit) *</label>
-                        <input
-                          type="password"
-                          maxLength="4"
-                          placeholder="e.g. 1234"
-                          value={aadhaarShareCode}
-                          onChange={(e) => setAadhaarShareCode(e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono tracking-widest focus:ring-2 focus:ring-red-500 focus:outline-none"
-                        />
-                      </div>
-                    </div>
 
                     <button
                       type="button"
                       disabled={aadhaarLoading}
-                      onClick={handleVerifyAadhaarEkyc}
-                      className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 rounded-xl transition-all flex items-center justify-center space-x-1.5"
+                      onClick={handleContinueWithDigiLocker}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition-all flex items-center justify-center space-x-2 shadow-sm shadow-blue-200"
                     >
-                      <Upload className="w-3.5 h-3.5 text-red-400" />
-                      <span>{aadhaarLoading ? 'Processing UIDAI e-KYC...' : 'Verify Aadhaar e-KYC'}</span>
+                      <ExternalLink className="w-4 h-4 text-blue-100" />
+                      <span>{aadhaarLoading ? 'Connecting to DigiLocker...' : 'Continue with DigiLocker'}</span>
                     </button>
                   </div>
                 ) : (
                   <div className="bg-emerald-100/80 border border-emerald-300 p-3 rounded-xl flex items-center space-x-2 text-emerald-900 text-xs font-semibold">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <span>UIDAI e-KYC Verified for: <strong>{aadhaarHolderName}</strong></span>
+                    <span>DigiLocker Identity Verified for: <strong>{aadhaarHolderName}</strong></span>
                   </div>
                 )}
               </div>
