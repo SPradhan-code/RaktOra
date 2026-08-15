@@ -7,7 +7,7 @@ require('dotenv').config();
 
 const db = require('./db');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
-const { securityHeaders, rateLimiter, decryptIncomingPayload } = require('./middleware/security');
+const { securityHeaders, rateLimiter } = require('./middleware/security');
 
 const authRoutes = require('./routes/auth');
 const donorRoutes = require('./routes/donors');
@@ -27,7 +27,6 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(securityHeaders);
 app.use(express.json({ limit: '10mb' }));
-app.use(decryptIncomingPayload);
 
 // API Routes
 app.use('/api/auth', rateLimiter, authRoutes);

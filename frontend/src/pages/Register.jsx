@@ -4,7 +4,6 @@ import { User, Mail, Phone, Lock, MapPin, Building2, Droplets, ShieldCheck, Chec
 import { useAuth } from '../context/AuthContext';
 import { INDIAN_STATES, getCitiesForState } from '../data/indianStatesAndCities';
 import { sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, initiateDigiLockerVerification } from '../services/api';
-import { encryptPayload } from '../utils/cryptoUtils';
 import RaktOraLogo from '../components/RaktOraLogo';
 
 const GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -292,12 +291,12 @@ export default function Register() {
           <div className="flex justify-center">
             <RaktOraLogo size={56} />
           </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Create Verified RaktOra Account</h1>
-          <p className="text-xs text-slate-500">Join India's encrypted, production-verified voluntary blood network</p>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Create RaktOra Account</h1>
+          <p className="text-xs text-slate-500">Join India's voluntary blood donor management network</p>
           
           <div className="inline-flex items-center space-x-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold py-1 px-3 rounded-full mt-1">
-            <Lock className="w-3 h-3 text-emerald-600" />
-            <span>End-to-End Encrypted & Production Verified</span>
+            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+            <span>Verified Voluntary Blood Network</span>
           </div>
         </div>
 

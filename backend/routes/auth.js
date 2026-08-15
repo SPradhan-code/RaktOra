@@ -7,7 +7,6 @@ const multer = require('multer');
 
 const { query, queryOne, execute } = require('../db');
 const { JWT_SECRET, authenticateToken } = require('../middleware/auth');
-const { encrypt, decrypt } = require('../utils/encryption');
 const { validatePasswordStrength } = require('../utils/passwordPolicy');
 const { logAuditAction } = require('../utils/auditLogger');
 const { sendEmailOtp } = require('../services/emailService');
@@ -551,18 +550,18 @@ router.post('/register', async (req, res, next) => {
 
     // Handle Role Specific Profile Insertions
     if (role === 'donor') {
-      const encryptedGovtId = encrypt(govt_id ? govt_id.trim() : 'UNVERIFIED_DONOR_ID');
+      const donorGovtId = govt_id ? govt_id.trim() : 'UNVERIFIED_DONOR_ID';
       await execute(
         `INSERT INTO Donors (user_id, blood_group, age, gender, weight, address, is_available, govt_id)
          VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-        [userId, blood_group || 'O+', age || 25, gender || 'Male', weight || 60, address || city, encryptedGovtId]
+        [userId, blood_group || 'O+', age || 25, gender || 'Male', weight || 60, address || city, donorGovtId]
       );
     } else if (role === 'recipient') {
-      const encryptedContact = encrypt(emergency_contact || phone);
+      const recipientContact = emergency_contact || phone;
       await execute(
         `INSERT INTO Recipients (user_id, emergency_contact, relationship_to_patient)
          VALUES (?, ?, ?)`,
-        [userId, encryptedContact, relationship || 'Self']
+        [userId, recipientContact, relationship || 'Self']
       );
     } else if (role === 'blood_bank') {
       const bankLic = license_number ? license_number.trim() : `LIC-BB-${Date.now()}`;

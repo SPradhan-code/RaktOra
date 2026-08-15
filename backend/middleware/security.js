@@ -1,5 +1,3 @@
-const { decrypt, verifySignature } = require('../utils/encryption');
-
 // Simple Rate Limiting Map (IP -> { count, startTime })
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -47,25 +45,7 @@ function rateLimiter(req, res, next) {
   next();
 }
 
-/**
- * Middleware to decrypt incoming encrypted payloads if present
- */
-function decryptIncomingPayload(req, res, next) {
-  if (req.body && req.body._encryptedPayload) {
-    try {
-      const decryptedJson = decrypt(req.body._encryptedPayload);
-      const parsed = JSON.parse(decryptedJson);
-      req.body = { ...parsed, ...req.body };
-      delete req.body._encryptedPayload;
-    } catch (err) {
-      console.warn('Failed to decrypt incoming payload, proceeding with body');
-    }
-  }
-  next();
-}
-
 module.exports = {
   securityHeaders,
-  rateLimiter,
-  decryptIncomingPayload
+  rateLimiter
 };
