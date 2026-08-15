@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { query, queryOne, execute } = require('../db');
+const { query, queryOne, execute, withTransaction } = require('../db');
 const { authenticateToken } = require('../middleware/auth');
 const { calculateHaversineDistance, isBloodCompatible } = require('../utils/geoUtils');
 const { calculateDonorEligibility } = require('../services/eligibilityEngine');
@@ -8,23 +8,14 @@ const { sendSmsOtp } = require('../services/smsService');
 const { sendEmailOtp } = require('../services/emailService');
 const { logAuditAction } = require('../utils/auditLogger');
 
-// Simple Rate Limiting Map (Max 5 emergency requests per user / IP per 10 minutes)
-const requestRateLimits = new Map();
+const { InMemoryRateLimiter } = require('../utils/rateLimiter');
 
-function checkRateLimit(key, max = 5, windowMs = 10 * 60 * 1000) {
-  const now = Date.now();
-  const record = requestRateLimits.get(key) || { count: 0, startTime: now };
-
-  if (now - record.startTime > windowMs) {
-    record.count = 1;
-    record.startTime = now;
-  } else {
-    record.count += 1;
-  }
-
-  requestRateLimits.set(key, record);
-  return record.count <= max;
-}
+// Rate Limiter for Emergency Requests & Dispatches (Pruned automatically every 2 mins)
+const requestRateLimiter = new InMemoryRateLimiter({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  cleanupIntervalMs: 2 * 60 * 1000
+});
 
 // ============================================================================
 // 1. CREATE EMERGENCY BLOOD REQUEST (POST /api/requests)
@@ -32,7 +23,8 @@ function checkRateLimit(key, max = 5, windowMs = 10 * 60 * 1000) {
 router.post('/', authenticateToken, async (req, res, next) => {
   try {
     const rateLimitKey = `req_${req.user.id}_${req.ip}`;
-    if (!checkRateLimit(rateLimitKey, 5, 10 * 60 * 1000)) {
+    const rateCheck = requestRateLimiter.consume(rateLimitKey, 5, 10 * 60 * 1000);
+    if (!rateCheck.allowed) {
       return res.status(429).json({
         success: false,
         message: 'Too many requests. Please try again later.'
@@ -146,7 +138,8 @@ router.post('/', authenticateToken, async (req, res, next) => {
 router.post('/:id/dispatch-batch', authenticateToken, async (req, res, next) => {
   try {
     const rateLimitKey = `dispatch_${req.user.id}_${req.params.id}`;
-    if (!checkRateLimit(rateLimitKey, 3, 5 * 60 * 1000)) {
+    const rateCheck = requestRateLimiter.consume(rateLimitKey, 3, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
       return res.status(429).json({
         success: false,
         message: 'Too many requests. Please try again later.'
@@ -230,12 +223,16 @@ router.post('/:id/dispatch-batch', authenticateToken, async (req, res, next) => 
 
       // 2. Email Notification
       if (donor.emergency_email !== 0 && donor.email) {
-        sendEmailOtp(donor.email, 'EMERGENCY_ALERT').catch(() => {});
+        sendEmailOtp(donor.email, 'EMERGENCY_ALERT').catch((err) => {
+          console.error(`[EMERGENCY ALERT EMAIL ERROR] Failed dispatch to ${donor.email}:`, err.message || err);
+        });
       }
 
       // 3. SMS Notification
       if (donor.emergency_sms !== 0 && donor.phone) {
-        sendSmsOtp(donor.phone, 'EMERGENCY').catch(() => {});
+        sendSmsOtp(donor.phone, 'EMERGENCY').catch((err) => {
+          console.error(`[EMERGENCY ALERT SMS ERROR] Failed dispatch to ${donor.phone}:`, err.message || err);
+        });
       }
 
       notifiedCount += 1;
@@ -429,46 +426,110 @@ router.patch('/:id/status', authenticateToken, async (req, res, next) => {
 });
 
 // ============================================================================
-// 7. FULFILL UNITS (POST /api/requests/:id/fulfill)
+// 7. ATOMIC FULFILL UNITS (POST /api/requests/:id/fulfill)
 // ============================================================================
+/**
+ * Fulfills requested blood units with ACID transaction & row-level locking.
+ * 
+ * 🎓 CONCURRENCY & INTEGRITY EXPLANATION:
+ * When multiple hospitals or donors attempt to fulfill the same emergency request concurrently,
+ * a naive read-modify-write causes "Lost Updates" where both read units_fulfilled=0, add 1, and write 1.
+ * 
+ * By executing within `withTransaction` and acquiring an exclusive row lock (`SELECT ... FOR UPDATE`),
+ * MySQL/InnoDB queues concurrent fulfillment requests, recalculates `units_fulfilled` based on the latest committed
+ * state, guarantees that `units_fulfilled` never exceeds `units_needed`, and transitions status to `FULFILLED` safely.
+ */
 router.post('/:id/fulfill', authenticateToken, async (req, res, next) => {
   try {
     const { units } = req.body;
-    const addUnits = parseInt(units, 10) || 1;
+    const parsedUnits = parseInt(units, 10);
 
-    const request = await queryOne('SELECT * FROM BloodRequests WHERE id = ?', [req.params.id]);
-    if (!request) {
-      return res.status(404).json({ success: false, message: 'Request not found' });
+    if (isNaN(parsedUnits) || parsedUnits <= 0) {
+      return res.status(400).json({ success: false, message: 'Units must be a positive integer greater than 0.' });
     }
+    const addUnits = parsedUnits;
 
-    const newFulfilled = request.units_fulfilled + addUnits;
-    let newStatus = 'PARTIALLY_FULFILLED';
-    if (newFulfilled >= request.units_needed) {
-      newStatus = 'FULFILLED';
-    }
+    const updatedRequest = await withTransaction(async (conn) => {
+      // 1. Acquire exclusive row lock on target blood request record
+      const selectSql = 'SELECT * FROM BloodRequests WHERE id = ? FOR UPDATE';
+      let request;
+      if (typeof conn.execute === 'function') {
+        const [rows] = await conn.execute(selectSql, [req.params.id]);
+        request = rows[0];
+      } else {
+        const rows = await conn.query(selectSql, [req.params.id]);
+        request = Array.isArray(rows[0]) ? rows[0][0] : rows[0];
+      }
 
-    await execute(
-      'UPDATE BloodRequests SET units_fulfilled = ?, status = ? WHERE id = ?',
-      [newFulfilled, newStatus, req.params.id]
-    );
+      if (!request) {
+        const err = new Error('Emergency request not found');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      // 2. State & Over-Fulfillment Check
+      const terminalStatuses = ['FULFILLED', 'CLOSED', 'CANCELLED', 'REJECTED', 'EXPIRED'];
+      if (terminalStatuses.includes(request.status)) {
+        const err = new Error(`Cannot fulfill request with status '${request.status}'. This request is already completed or closed.`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const currentFulfilled = parseInt(request.units_fulfilled, 10) || 0;
+      const unitsNeeded = parseInt(request.units_needed, 10) || 1;
+      const remainingNeeded = Math.max(0, unitsNeeded - currentFulfilled);
+
+      if (remainingNeeded <= 0) {
+        const err = new Error('This request has already been completely fulfilled.');
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const actualUnitsAdded = Math.min(addUnits, remainingNeeded);
+      const newFulfilled = currentFulfilled + actualUnitsAdded;
+      const newStatus = newFulfilled >= unitsNeeded ? 'FULFILLED' : 'PARTIALLY_FULFILLED';
+
+      // 3. Atomically update request status and fulfilled count
+      const updateSql = 'UPDATE BloodRequests SET units_fulfilled = ?, status = ? WHERE id = ?';
+      if (typeof conn.execute === 'function') {
+        await conn.execute(updateSql, [newFulfilled, newStatus, req.params.id]);
+      } else {
+        await conn.query(updateSql, [newFulfilled, newStatus, req.params.id]);
+      }
+
+      return {
+        id: request.id,
+        units_fulfilled: newFulfilled,
+        status: newStatus,
+        units_added: actualUnitsAdded,
+        units_needed: unitsNeeded
+      };
+    });
 
     await logAuditAction({
       actorUserId: req.user.id,
       action: 'request_fulfilled',
       entityType: 'BloodRequest',
-      entityId: request.id,
-      newValue: { units_fulfilled: newFulfilled, status: newStatus },
+      entityId: updatedRequest.id,
+      newValue: {
+        units_fulfilled: updatedRequest.units_fulfilled,
+        status: updatedRequest.status,
+        units_added: updatedRequest.units_added
+      },
       ipAddress: req.ip
     });
 
     return res.json({
       success: true,
-      message: `Successfully contributed ${addUnits} unit(s) to emergency request!`,
-      units_fulfilled: newFulfilled,
-      status: newStatus
+      message: `Successfully contributed ${updatedRequest.units_added} unit(s) to emergency request!`,
+      units_fulfilled: updatedRequest.units_fulfilled,
+      status: updatedRequest.status
     });
 
   } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
     next(error);
   }
 });

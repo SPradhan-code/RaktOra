@@ -36,7 +36,7 @@ export default function Register() {
     govt_id: '',
     bank_name: '',
     license_number: '',
-    admin_secret: 'ADMIN123'
+    admin_secret: ''
   });
 
   // Verification States (User can choose either Email or Phone SMS)
@@ -505,9 +505,9 @@ export default function Register() {
               <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Admin Security Key *</label>
                 <input
-                  type="text"
+                  type="password"
                   required
-                  placeholder="ADMIN123"
+                  placeholder="Enter server-configured admin security key"
                   value={formData.admin_secret}
                   onChange={(e) => setFormData({ ...formData, admin_secret: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-red-500 focus:outline-none"
@@ -516,13 +516,6 @@ export default function Register() {
             )}
 
           </div>
-
-          {/* VERIFICATION SECTION COMMENTED OUT PER USER REQUEST */}
-          {/*
-          <div className="space-y-4 pt-2">
-            ...
-          </div>
-          */}
 
           {/* Anti-Bot Security Math Challenge */}
           <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl flex items-center justify-between gap-3">

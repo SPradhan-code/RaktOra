@@ -1,0 +1,403 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "RaktOra REST API",
+    "description": "Comprehensive REST API specification for RaktOra - National Voluntary Blood Network and Smart FEFO Inventory Engine.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "RaktOra Developer Team",
+      "email": "support@raktora.org"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Base API Path"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Enter JWT Bearer token"
+      }
+    },
+    "schemas": {
+      "StandardResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "Operation completed successfully." }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "message": { "type": "string", "example": "Invalid request parameters." }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "full_name": { "type": "string", "example": "Rahul Sharma" },
+          "email": { "type": "string", "format": "email", "example": "rahul@raktora.org" },
+          "phone": { "type": "string", "example": "9876543210" },
+          "role": { "type": "string", "enum": ["donor", "recipient", "blood_bank", "hospital", "admin"], "example": "donor" },
+          "state": { "type": "string", "example": "Maharashtra" },
+          "city": { "type": "string", "example": "Mumbai" },
+          "pincode": { "type": "string", "example": "400001" },
+          "is_verified": { "type": "boolean", "example": true }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["full_name", "email", "password", "phone", "role", "state", "city"],
+        "properties": {
+          "full_name": { "type": "string", "example": "Rahul Sharma" },
+          "email": { "type": "string", "format": "email", "example": "rahul.donor@example.com" },
+          "password": { "type": "string", "format": "password", "example": "Password@123" },
+          "phone": { "type": "string", "example": "9876543210" },
+          "role": { "type": "string", "enum": ["donor", "recipient", "blood_bank", "hospital", "admin"], "example": "donor" },
+          "state": { "type": "string", "example": "Maharashtra" },
+          "city": { "type": "string", "example": "Mumbai" },
+          "pincode": { "type": "string", "example": "400001" },
+          "blood_group": { "type": "string", "enum": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], "example": "O+" },
+          "age": { "type": "integer", "example": 25 },
+          "gender": { "type": "string", "enum": ["Male", "Female", "Other"], "example": "Male" },
+          "weight": { "type": "number", "example": 68 },
+          "admin_secret": { "type": "string" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "example": "rahul.donor@example.com" },
+          "phone": { "type": "string", "example": "9876543210" },
+          "password": { "type": "string", "format": "password", "example": "Password@123" }
+        }
+      },
+      "BloodRequestInput": {
+        "type": "object",
+        "required": ["patient_name", "blood_group", "units_needed", "hospital_name", "city", "state", "contact_number"],
+        "properties": {
+          "patient_name": { "type": "string", "example": "Suresh Verma" },
+          "blood_group": { "type": "string", "enum": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], "example": "B+" },
+          "component": { "type": "string", "enum": ["WHOLE_BLOOD", "PRBC", "PLATELETS", "FFP", "CRYOPRECIPITATE", "SDP"], "example": "WHOLE_BLOOD" },
+          "units_needed": { "type": "integer", "minimum": 1, "example": 2 },
+          "hospital_name": { "type": "string", "example": "Apollo Hospital" },
+          "hospital_address": { "type": "string", "example": "Bannerghatta Road" },
+          "city": { "type": "string", "example": "Bengaluru" },
+          "state": { "type": "string", "example": "Karnataka" },
+          "urgency_level": { "type": "string", "enum": ["Normal", "Urgent", "Critical"], "example": "Urgent" },
+          "contact_number": { "type": "string", "example": "9876543210" }
+        }
+      },
+      "FulfillRequestInput": {
+        "type": "object",
+        "required": ["units"],
+        "properties": {
+          "units": { "type": "integer", "minimum": 1, "example": 1 }
+        }
+      },
+      "FefoIssueInput": {
+        "type": "object",
+        "required": ["blood_group", "units_needed"],
+        "properties": {
+          "blood_bank_id": { "type": "integer", "example": 1 },
+          "blood_group": { "type": "string", "enum": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], "example": "A+" },
+          "component": { "type": "string", "enum": ["WHOLE_BLOOD", "PRBC", "PLATELETS", "FFP", "CRYOPRECIPITATE", "SDP"], "example": "WHOLE_BLOOD" },
+          "units_needed": { "type": "integer", "minimum": 1, "example": 2 }
+        }
+      },
+      "AppointmentInput": {
+        "type": "object",
+        "required": ["blood_bank_id", "appointment_date", "time_slot"],
+        "properties": {
+          "blood_bank_id": { "type": "integer", "example": 1 },
+          "appointment_date": { "type": "string", "format": "date", "example": "2026-09-01" },
+          "time_slot": { "type": "string", "example": "10:00 AM - 11:00 AM" },
+          "donation_type": { "type": "string", "enum": ["WHOLE_BLOOD", "PRBC", "PLATELETS", "FFP", "CRYOPRECIPITATE", "SDP"], "example": "WHOLE_BLOOD" }
+        }
+      },
+      "CampInput": {
+        "type": "object",
+        "required": ["organizer_name", "camp_title", "date", "time_start", "time_end", "venue_address", "city", "state"],
+        "properties": {
+          "organizer_name": { "type": "string", "example": "Red Cross Bengaluru" },
+          "camp_title": { "type": "string", "example": "Annual Mega Blood Donation Drive" },
+          "date": { "type": "string", "format": "date", "example": "2026-09-15" },
+          "time_start": { "type": "string", "example": "09:00" },
+          "time_end": { "type": "string", "example": "17:00" },
+          "venue_address": { "type": "string", "example": "Town Hall Auditorium" },
+          "city": { "type": "string", "example": "Bengaluru" },
+          "state": { "type": "string", "example": "Karnataka" },
+          "expected_donors": { "type": "integer", "example": 250 }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "Server online",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "online" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/features": {
+      "get": {
+        "summary": "Public Features Discovery",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "Sanitized active feature flags",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "features": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "summary": "Register a New User",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "User created successfully" },
+          "400": { "description": "Validation error or duplicate email/phone" },
+          "403": { "description": "Admin registration blocked without valid admin secret" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Authenticate User",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful" },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "summary": "Get Current User Profile",
+        "tags": ["Authentication"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Profile data retrieved" },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "delete": {
+        "summary": "Delete My Account",
+        "tags": ["Authentication"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Account deleted successfully" }
+        }
+      }
+    },
+    "/donors/search": {
+      "get": {
+        "summary": "Search Available Blood Donors",
+        "tags": ["Donors"],
+        "responses": {
+          "200": { "description": "Matching donors list" }
+        }
+      }
+    },
+    "/donors/eligibility/check": {
+      "get": {
+        "summary": "Check Donor Medical Eligibility",
+        "tags": ["Donors"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Eligibility result" }
+        }
+      }
+    },
+    "/requests": {
+      "get": {
+        "summary": "List Emergency Blood Requests",
+        "tags": ["Blood Requests"],
+        "responses": {
+          "200": { "description": "Requests list" }
+        }
+      },
+      "post": {
+        "summary": "Create Emergency Blood Request",
+        "tags": ["Blood Requests"],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BloodRequestInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Request created successfully" },
+          "400": { "description": "Validation error" }
+        }
+      }
+    },
+    "/requests/{id}/fulfill": {
+      "post": {
+        "summary": "Fulfill Blood Request Units (Atomic)",
+        "tags": ["Blood Requests"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FulfillRequestInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Fulfillment contribution applied" },
+          "400": { "description": "Invalid quantity or request already fulfilled" },
+          "404": { "description": "Request not found" }
+        }
+      }
+    },
+    "/bloodbanks": {
+      "get": {
+        "summary": "List Approved Blood Banks",
+        "tags": ["Blood Banks"],
+        "responses": {
+          "200": { "description": "Blood banks list" }
+        }
+      }
+    },
+    "/bloodunits/fefo-issue": {
+      "post": {
+        "summary": "FEFO Blood Unit Issuance (Atomic)",
+        "tags": ["Blood Inventory"],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FefoIssueInput" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Units issued successfully via FEFO" },
+          "400": { "description": "Insufficient available FEFO stock" }
+        }
+      }
+    },
+    "/appointments": {
+      "get": {
+        "summary": "List Appointments",
+        "tags": ["Appointments"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Appointments list" }
+        }
+      },
+      "post": {
+        "summary": "Book Blood Donation Appointment",
+        "tags": ["Appointments"],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AppointmentInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Appointment booked successfully" }
+        }
+      }
+    },
+    "/camps": {
+      "get": {
+        "summary": "List Donation Camps",
+        "tags": ["Donation Camps"],
+        "responses": {
+          "200": { "description": "Camps list" }
+        }
+      },
+      "post": {
+        "summary": "Create Donation Camp",
+        "tags": ["Donation Camps"],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CampInput" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Camp registered successfully" }
+        }
+      }
+    },
+    "/admin/metrics": {
+      "get": {
+        "summary": "Admin Dashboard Metrics",
+        "tags": ["Administration"],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Admin metrics summary" },
+          "403": { "description": "Forbidden: Requires administrator role" }
+        }
+      }
+    }
+  }
+}

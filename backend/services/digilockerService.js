@@ -118,7 +118,9 @@ async function exchangeDigiLockerCode(code, codeVerifier) {
         let parsed = null;
         try {
           parsed = JSON.parse(body);
-        } catch (e) {}
+        } catch (e) {
+          // Safe fallback: DigiLocker API response was non-JSON HTML/plain-text
+        }
 
         if (res.statusCode >= 200 && res.statusCode < 300 && parsed && parsed.access_token) {
           resolve({
@@ -169,7 +171,9 @@ async function fetchDigiLockerUserDocuments(accessToken) {
         let parsed = null;
         try {
           parsed = JSON.parse(body);
-        } catch (e) {}
+        } catch (e) {
+          // Safe fallback: DigiLocker API response was non-JSON HTML/plain-text
+        }
 
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve({ success: true, documents: parsed?.items || [] });

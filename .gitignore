@@ -1,33 +1,67 @@
 # Dependencies
 node_modules/
 **/node_modules/
+.pnp
+.pnp.js
 
 # Production & Build outputs
 dist/
 **/dist/
 build/
 **/build/
+out/
+.next/
 
-# Environment variables
+# Bundler & Linter Caches
+.cache/
+**/.cache/
+.vite/
+**/.vite/
+.eslintcache
+.stylelintcache
+
+# Test & Coverage Artifacts
+coverage/
+**/coverage/
+.nyc_output/
+*.lcov
+
+# Environment variables & secrets (Never commit real credentials)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
 **/.env
+**/.env.*
+!.env.example
+!**/.env.example
 
-# Logs
+# Logs & Debugging
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 logs/
 *.log
 
-# Database files
+# Database & Certificate local files
 *.db
+*.sqlite
+*.sqlite3
+*.pem
+*.crt
+*.cer
+certs/
+**/certs/
 
-# Editor & System files
+# OS & Editor Metadata
 .vscode/
+!.vscode/extensions.json
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 .DS_Store
 Thumbs.db
+*.tmp
+*.temp

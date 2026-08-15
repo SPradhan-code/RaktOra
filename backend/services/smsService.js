@@ -77,7 +77,9 @@ async function sendSmsOtp(phone, otpCode) {
         let parsed = null;
         try {
           parsed = JSON.parse(body);
-        } catch (e) {}
+        } catch (e) {
+          // Safe fallback: MSG91 API error response was non-JSON HTML/plain-text
+        }
 
         if (res.statusCode >= 200 && res.statusCode < 300 && (!parsed || parsed.type !== 'error')) {
           resolve({ success: true, message: parsed?.message || 'SMS OTP sent successfully' });

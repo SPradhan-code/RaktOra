@@ -1,11 +1,11 @@
-const { execute } = require('../db');
+const db = require('../db');
 
 /**
  * Inserts an immutable audit log entry into MySQL
  */
 async function logAuditAction({ actorUserId, action, entityType, entityId, oldValue, newValue, ipAddress }) {
   try {
-    await execute(
+    await db.execute(
       `INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, old_value, new_value, ip_address)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [

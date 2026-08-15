@@ -70,7 +70,9 @@ async function sendEmailOtp(toEmail, otpCode) {
             if (parsed && parsed.message) {
               errorMsg = parsed.message;
             }
-          } catch (e) {}
+          } catch (e) {
+            // Safe fallback: Resend API error response was non-JSON HTML/plain-text
+          }
           console.error(`[EMAIL SERVICE ERROR] Resend API status ${res.statusCode}:`, body);
           resolve({ success: false, error: errorMsg });
         }

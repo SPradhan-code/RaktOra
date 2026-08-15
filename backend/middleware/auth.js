@@ -1,6 +1,10 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'bloodconnect_super_secret_jwt_key_2026';
+if (!process.env.JWT_SECRET || !process.env.JWT_SECRET.trim()) {
+  throw new Error('FATAL: JWT_SECRET environment variable is missing. Please configure JWT_SECRET in process.env.');
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
 
 function parseCookies(req) {
   const list = {};

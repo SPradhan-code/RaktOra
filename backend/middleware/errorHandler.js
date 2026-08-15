@@ -1,15 +1,26 @@
 // Central Error Handler Middleware for Express
 
 function errorHandler(err, req, res, next) {
-  console.error('API Error:', err);
+  // Always log complete error details on the server side for diagnostics
+  console.error('[API ERROR]:', err);
 
-  const statusCode = err.statusCode || res.statusCode === 200 ? 500 : res.statusCode;
-  const message = err.message || 'Internal Server Error';
+  // Correctly evaluate HTTP status code from custom error or response
+  const statusCode = err.statusCode || (res.statusCode && res.statusCode !== 200 ? res.statusCode : 500);
+  
+  // Sanitize internal database / raw system error messages sent to clients in production
+  let clientMessage = err.message || 'Internal Server Error';
+  if (err.code && (err.code.startsWith('ER_') || err.code.startsWith('PROTOCOL_'))) {
+    if (process.env.NODE_ENV === 'production') {
+      clientMessage = 'A database error occurred. Please check your request parameters and try again.';
+    } else {
+      clientMessage = `Database Error (${err.code}): ${err.message}`;
+    }
+  }
 
   res.status(statusCode).json({
     success: false,
-    message,
-    stack: process.env.NODE_ENV === 'production' ? null : err.stack
+    message: clientMessage,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack, code: err.code })
   });
 }
 

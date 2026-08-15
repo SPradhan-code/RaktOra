@@ -19,6 +19,7 @@ const {
   exchangeDigiLockerCode,
   fetchDigiLockerUserDocuments
 } = require('../services/digilockerService');
+const features = require('../config/features');
 
 // Temporary in-memory CSRF & PKCE state cache for DigiLocker OAuth (10-min TTL)
 const digilockerStateStore = new Map();
@@ -47,6 +48,14 @@ function generateSecureOtp() {
 // ============================================================================
 router.post('/send-email-otp', async (req, res, next) => {
   try {
+    if (!features.ENABLE_EMAIL_OTP) {
+      return res.status(400).json({
+        success: false,
+        enabled: false,
+        message: 'This integration is not enabled in the current deployment.'
+      });
+    }
+
     const { email } = req.body;
     if (!email || !email.trim()) {
       return res.status(400).json({ success: false, message: 'Valid email address is required.' });
@@ -126,6 +135,14 @@ router.post('/send-email-otp', async (req, res, next) => {
 // ============================================================================
 router.post('/verify-email-otp', async (req, res, next) => {
   try {
+    if (!features.ENABLE_EMAIL_OTP) {
+      return res.status(400).json({
+        success: false,
+        enabled: false,
+        message: 'This integration is not enabled in the current deployment.'
+      });
+    }
+
     const { email, otp } = req.body;
     if (!email || !otp) {
       return res.status(400).json({ success: false, message: 'Email address and 6-digit OTP code are required.' });
@@ -185,6 +202,14 @@ router.post('/verify-email-otp', async (req, res, next) => {
 // ============================================================================
 router.post('/send-phone-otp', async (req, res, next) => {
   try {
+    if (!features.ENABLE_SMS_OTP) {
+      return res.status(400).json({
+        success: false,
+        enabled: false,
+        message: 'This integration is not enabled in the current deployment.'
+      });
+    }
+
     const { phone } = req.body;
     if (!phone || !phone.trim()) {
       return res.status(400).json({ success: false, message: 'Valid phone number is required.' });
@@ -263,6 +288,14 @@ router.post('/send-phone-otp', async (req, res, next) => {
 // ============================================================================
 router.post('/verify-phone-otp', async (req, res, next) => {
   try {
+    if (!features.ENABLE_SMS_OTP) {
+      return res.status(400).json({
+        success: false,
+        enabled: false,
+        message: 'This integration is not enabled in the current deployment.'
+      });
+    }
+
     const { phone, otp } = req.body;
     if (!phone || !otp) {
       return res.status(400).json({ success: false, message: 'Phone number and 6-digit OTP code are required.' });
@@ -354,6 +387,14 @@ router.post('/verify-otp', async (req, res, next) => {
  */
 router.get('/digilocker/initiate', (req, res) => {
   try {
+    if (!features.ENABLE_DIGILOCKER) {
+      return res.status(400).json({
+        success: false,
+        enabled: false,
+        message: 'This integration is not enabled in the current deployment.'
+      });
+    }
+
     const state = generateStateToken();
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
@@ -396,8 +437,12 @@ router.get('/digilocker/initiate', (req, res) => {
  * GET /api/auth/digilocker/callback
  */
 router.get('/digilocker/callback', async (req, res) => {
-  const { code, state, error, error_description } = req.query;
   const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  if (!features.ENABLE_DIGILOCKER) {
+    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent('This integration is not enabled in the current deployment.')}`);
+  }
+
+  const { code, state, error, error_description } = req.query;
 
   // 1. Handle DigiLocker user cancellation / denied consent
   if (error || error_description) {
@@ -440,8 +485,12 @@ router.get('/digilocker/callback', async (req, res) => {
  * GET /api/auth/digilocker/dev-callback
  */
 router.get('/digilocker/dev-callback', (req, res) => {
-  if (process.env.DIGILOCKER_DEV_MODE !== 'true') {
-    return res.status(400).json({ success: false, message: 'Development callback is disabled.' });
+  if (!features.ENABLE_DIGILOCKER || process.env.DIGILOCKER_DEV_MODE !== 'true') {
+    return res.status(400).json({
+      success: false,
+      enabled: false,
+      message: 'This integration is not enabled in the current deployment.'
+    });
   }
 
   console.log('[DIGILOCKER DEV MODE] Simulating DigiLocker authorization redirect callback.');
@@ -502,8 +551,25 @@ router.post('/register', async (req, res, next) => {
 
     // Role-specific Security Checks
     if (role === 'admin') {
-      const validPasscodes = ['ADMIN123', 'BLOOD_CONNECT_ADMIN', 'SYSTEM_ADMIN_2026'];
-      if (!admin_secret || !validPasscodes.includes(admin_secret.trim())) {
+      const configuredAdminSecret = process.env.ADMIN_REGISTRATION_SECRET;
+      if (!configuredAdminSecret || !configuredAdminSecret.trim()) {
+        console.error('[SECURITY ALERT] Admin registration attempt rejected: ADMIN_REGISTRATION_SECRET is not configured on the server.');
+        return res.status(403).json({
+          success: false,
+          message: 'Administrator registration is currently disabled on this server. Contact system administrator.'
+        });
+      }
+
+      // Timing-safe comparison to prevent side-channel timing attacks
+      const providedSecretBuf = Buffer.from(String(admin_secret || '').trim());
+      const expectedSecretBuf = Buffer.from(String(configuredAdminSecret).trim());
+
+      const isValidSecret = (
+        providedSecretBuf.length === expectedSecretBuf.length &&
+        crypto.timingSafeEqual(providedSecretBuf, expectedSecretBuf)
+      );
+
+      if (!isValidSecret) {
         return res.status(403).json({
           success: false,
           message: 'Invalid Admin Security Key. Unauthorized attempt to create an Administrator account.'
