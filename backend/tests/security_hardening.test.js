@@ -8,9 +8,10 @@ const { validateEnvironment } = require('../config/envValidator');
 
 describe('🛡️ Comprehensive Security Hardening & CORS Suite', () => {
 
-  test('1. [CORS Whitelist Resolution] Whitelists local development ports and parses ALLOWED_ORIGINS env', () => {
+  test('1. [CORS Whitelist Resolution] Whitelists local development ports and parses ALLOWED_ORIGINS, FRONTEND_URL, and RENDER_EXTERNAL_URL', () => {
     process.env.ALLOWED_ORIGINS = 'https://raktora.onrender.com, https://custom.domain.org';
-    process.env.FRONTEND_URL = 'https://app.raktora.com';
+    process.env.FRONTEND_URL = 'https://app.raktora.com/';
+    process.env.RENDER_EXTERNAL_URL = 'https://blood-connect-q2ml.onrender.com/';
 
     const origins = getAllowedOrigins();
 
@@ -19,6 +20,7 @@ describe('🛡️ Comprehensive Security Hardening & CORS Suite', () => {
     assert.ok(origins.includes('https://raktora.onrender.com'));
     assert.ok(origins.includes('https://custom.domain.org'));
     assert.ok(origins.includes('https://app.raktora.com'));
+    assert.ok(origins.includes('https://blood-connect-q2ml.onrender.com'));
   });
 
   test('2. [CORS Allowed Origin Request] Permitted origin receives Access-Control headers and allows credentials', async () => {
@@ -55,6 +57,52 @@ describe('🛡️ Comprehensive Security Hardening & CORS Suite', () => {
       assert.strictEqual(res.status, 200);
     } finally {
       server.close();
+    }
+  });
+
+  test('3b. [CORS Production Rejection & Allowance] Enforces strict allowlisting in production mode', async () => {
+    const origEnv = process.env.NODE_ENV;
+    const origOrigins = process.env.ALLOWED_ORIGINS;
+    const origRenderUrl = process.env.RENDER_EXTERNAL_URL;
+
+    try {
+      process.env.NODE_ENV = 'production';
+      process.env.ALLOWED_ORIGINS = 'https://custom-frontend.onrender.com';
+      process.env.RENDER_EXTERNAL_URL = 'https://blood-connect-q2ml.onrender.com';
+
+      const app = express();
+      app.use(createCorsMiddleware());
+      app.get('/test-prod-cors', (req, res) => res.json({ ok: true }));
+      // Express error handler for CORS rejection error
+      app.use((err, req, res, next) => {
+        res.status(err.statusCode || 500).json({ error: err.message });
+      });
+
+      const server = app.listen(0);
+      const port = server.address().port;
+
+      try {
+        // Allowed origin from RENDER_EXTERNAL_URL
+        const allowedRes = await fetch(`http://127.0.0.1:${port}/test-prod-cors`, {
+          headers: { 'Origin': 'https://blood-connect-q2ml.onrender.com' }
+        });
+        assert.strictEqual(allowedRes.status, 200);
+        assert.strictEqual(allowedRes.headers.get('access-control-allow-origin'), 'https://blood-connect-q2ml.onrender.com');
+
+        // Blocked origin not in allowlist
+        const blockedRes = await fetch(`http://127.0.0.1:${port}/test-prod-cors`, {
+          headers: { 'Origin': 'https://malicious-site.com' }
+        });
+        assert.strictEqual(blockedRes.status, 403);
+        const data = await blockedRes.json();
+        assert.ok(data.error.includes('CORS policy: Origin https://malicious-site.com is not allowed access.'));
+      } finally {
+        server.close();
+      }
+    } finally {
+      process.env.NODE_ENV = origEnv;
+      process.env.ALLOWED_ORIGINS = origOrigins;
+      process.env.RENDER_EXTERNAL_URL = origRenderUrl;
     }
   });
 

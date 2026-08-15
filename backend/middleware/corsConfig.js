@@ -32,6 +32,14 @@ function getAllowedOrigins() {
     }
   }
 
+  // Parse RENDER_EXTERNAL_URL if provided (automatic Render service origin)
+  if (process.env.RENDER_EXTERNAL_URL) {
+    const trimmed = process.env.RENDER_EXTERNAL_URL.trim().replace(/\/$/, '');
+    if (trimmed && !envOrigins.includes(trimmed)) {
+      envOrigins.push(trimmed);
+    }
+  }
+
   return Array.from(new Set([...defaultLocalOrigins, ...envOrigins]));
 }
 
