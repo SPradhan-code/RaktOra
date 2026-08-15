@@ -3,6 +3,7 @@ import axios from 'axios';
 // Create Axios Instance
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -37,6 +38,7 @@ api.interceptors.response.use(
 // ============================================================================
 export const loginUser = (credentials) => api.post('/auth/login', credentials);
 export const registerUser = (userData) => api.post('/auth/register', userData);
+export const logoutUser = () => api.post('/auth/logout');
 export const sendOtp = (data) => api.post('/auth/send-otp', data);
 export const verifyOtp = (data) => api.post('/auth/verify-otp', data);
 export const sendEmailOtp = (data) => api.post('/auth/send-email-otp', data);
@@ -46,6 +48,7 @@ export const verifyPhoneOtp = (data) => api.post('/auth/verify-phone-otp', data)
 export const initiateDigiLockerVerification = () => api.get('/auth/digilocker/initiate');
 export const getCurrentUser = () => api.get('/auth/me');
 export const forgotPassword = (email) => api.post('/auth/forgot-password', { email });
+export const resetPassword = (data) => api.post('/auth/reset-password', data);
 export const deleteMyAccount = () => api.delete('/auth/me');
 
 // ============================================================================
@@ -129,6 +132,7 @@ export const getAdminHospitals = (params = {}) => api.get('/admin/hospitals', { 
 export const updateHospitalStatus = (id, status) => api.patch(`/admin/hospitals/${id}/status`, { status });
 export const getAdminAuditLogs = (params = {}) => api.get('/admin/audit-logs', { params });
 export const toggleUserVerification = (id, is_verified) => api.patch(`/admin/users/${id}/verify`, { is_verified });
+export const updateUserStatus = (id, account_status) => api.patch(`/admin/users/${id}/status`, { account_status });
 export const approveBloodBank = (id, is_approved) => api.patch(`/admin/bloodbanks/${id}/approve`, { is_approved });
 export const deleteUser = (id) => api.delete(`/admin/users/${id}`);
 

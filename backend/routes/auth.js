@@ -8,6 +8,8 @@ const multer = require('multer');
 const { query, queryOne, execute } = require('../db');
 const { JWT_SECRET, authenticateToken } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../utils/encryption');
+const { validatePasswordStrength } = require('../utils/passwordPolicy');
+const { logAuditAction } = require('../utils/auditLogger');
 const { sendEmailOtp } = require('../services/emailService');
 const { sanitizeIndianPhone, sendSmsOtp } = require('../services/smsService');
 const {
@@ -465,7 +467,7 @@ router.post('/register', async (req, res, next) => {
       digilocker_verified, verification_provider, verification_reference
     } = req.body;
 
-    // Field Validation
+    // Mandatory Field Validation
     if (!full_name || !email || !password || !phone || !role || !state || !city) {
       return res.status(400).json({ 
         success: false, 
@@ -473,7 +475,13 @@ router.post('/register', async (req, res, next) => {
       });
     }
 
-    const validRoles = ['donor', 'recipient', 'blood_bank', 'admin'];
+    // Password Complexity Validation
+    const strength = validatePasswordStrength(password);
+    if (!strength.isValid) {
+      return res.status(400).json({ success: false, message: strength.message });
+    }
+
+    const validRoles = ['donor', 'recipient', 'blood_bank', 'hospital', 'admin'];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ success: false, message: 'Invalid role specified' });
     }
@@ -493,7 +501,7 @@ router.post('/register', async (req, res, next) => {
       }
     }
 
-    // Role-specific Security & Identity Verification Checks
+    // Role-specific Security Checks
     if (role === 'admin') {
       const validPasscodes = ['ADMIN123', 'BLOOD_CONNECT_ADMIN', 'SYSTEM_ADMIN_2026'];
       if (!admin_secret || !validPasscodes.includes(admin_secret.trim())) {
@@ -504,17 +512,6 @@ router.post('/register', async (req, res, next) => {
       }
     }
 
-    /* VERIFICATION CHECK COMMENTED OUT PER USER REQUEST
-    if (role === 'donor') {
-      if (!digilocker_verified && (!govt_id || !govt_id.trim())) {
-        return res.status(400).json({
-          success: false,
-          message: 'DigiLocker Identity verification is required for voluntary donor registration.'
-        });
-      }
-    }
-    */
-
     if (role === 'blood_bank') {
       if (!license_number || !license_number.trim()) {
         return res.status(400).json({
@@ -524,26 +521,27 @@ router.post('/register', async (req, res, next) => {
       }
     }
 
-    // Verification checks (Commented out per user request - default all verification flags to 1)
-    const isEmailVerified = 1;
-    const isPhoneVerified = 1;
-    const isDigiLockerVerified = 1;
-    const providerName = verification_provider || 'DIRECT_REGISTRATION';
-    const providerRef = verification_reference || 'DIRECT-REGISTERED';
+    // Verification Flags: Default accurately to 0 (unverified) unless explicitly verified by provider
+    const isEmailVerified = email_verified ? 1 : 0;
+    const isPhoneVerified = phone_verified ? 1 : 0;
+    const isAadhaarVerified = aadhaar_verified ? 1 : 0;
+    const isDigiLockerVerified = digilocker_verified ? 1 : 0;
+    const providerName = verification_provider || 'EMAIL_PASSWORD_REGISTRATION';
+    const providerRef = verification_reference || 'STANDARD-REGISTERED';
 
-    // Hash password
+    // Securely Hash Password
     const passwordHash = await bcrypt.hash(password, 10);
 
     // Insert User into MySQL
     const userResult = await execute(
-      `INSERT INTO Users (full_name, email, password_hash, phone, role, state, city, pincode, is_verified, email_verified, phone_verified, aadhaar_verified, digilocker_verified, email_verified_at, phone_verified_at, aadhaar_verified_at, digilocker_verified_at, verification_provider, verification_reference)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Users (full_name, email, password_hash, phone, role, state, city, pincode, is_verified, email_verified, phone_verified, aadhaar_verified, digilocker_verified, email_verified_at, phone_verified_at, aadhaar_verified_at, digilocker_verified_at, verification_provider, verification_reference, failed_login_attempts, account_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active')`,
       [
         full_name, email.trim().toLowerCase(), passwordHash, phone.trim(), role, state, city, pincode || null,
-        isEmailVerified, isPhoneVerified, isDigiLockerVerified, isDigiLockerVerified,
+        isEmailVerified, isPhoneVerified, isAadhaarVerified, isDigiLockerVerified,
         isEmailVerified ? new Date() : null,
         isPhoneVerified ? new Date() : null,
-        isDigiLockerVerified ? new Date() : null,
+        isAadhaarVerified ? new Date() : null,
         isDigiLockerVerified ? new Date() : null,
         providerName, providerRef
       ]
@@ -553,7 +551,7 @@ router.post('/register', async (req, res, next) => {
 
     // Handle Role Specific Profile Insertions
     if (role === 'donor') {
-      const encryptedGovtId = encrypt(govt_id ? govt_id.trim() : 'VERIFIED_DONOR_ID');
+      const encryptedGovtId = encrypt(govt_id ? govt_id.trim() : 'UNVERIFIED_DONOR_ID');
       await execute(
         `INSERT INTO Donors (user_id, blood_group, age, gender, weight, address, is_available, govt_id)
          VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
@@ -582,14 +580,34 @@ router.post('/register', async (req, res, next) => {
           [bankId, bg]
         );
       }
+    } else if (role === 'hospital') {
+      const hospLic = license_number ? license_number.trim() : `LIC-HOSP-${Date.now()}`;
+      await execute(
+        `INSERT INTO Hospitals (user_id, name, license_number, contact_person, phone, email, state, city, full_address, pincode, verification_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_VERIFICATION')`,
+        [userId, bank_name || full_name, hospLic, full_name, phone, email, state, city, address || `${city}, ${state}`, pincode || '100001']
+      );
     }
+
+    // Audit Log Entry
+    await logAuditAction({
+      actorUserId: userId,
+      action: 'user_registered',
+      entityType: 'User',
+      entityId: userId,
+      newValue: { full_name, email: email.trim().toLowerCase(), role, phone, state, city },
+      ipAddress: req.ip
+    });
 
     // Issue JWT Token
     const token = jwt.sign(
-      { id: userId, email, role, full_name },
+      { id: userId, email: email.trim().toLowerCase(), role, full_name },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
+
+    // Set HTTP-only Cookie for security
+    res.setHeader('Set-Cookie', `token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
 
     return res.status(201).json({
       success: true,
@@ -598,7 +616,7 @@ router.post('/register', async (req, res, next) => {
       user: {
         id: userId,
         full_name,
-        email,
+        email: email.trim().toLowerCase(),
         role,
         phone,
         state,
@@ -621,21 +639,117 @@ router.post('/register', async (req, res, next) => {
 router.post('/login', async (req, res, next) => {
   try {
     const { email, phone, identifier, password } = req.body;
-    const loginTarget = (email || identifier || phone || '').trim();
+    const loginTarget = (email || identifier || phone || '').trim().toLowerCase();
+    const GENERIC_AUTH_ERROR = 'Invalid email/phone or password.';
 
     if (!loginTarget || !password) {
       return res.status(400).json({ success: false, message: 'Email address or Phone number and password are required.' });
     }
 
-    const user = await queryOne('SELECT * FROM Users WHERE email = ? OR phone = ?', [loginTarget, loginTarget]);
+    // Fetch user record
+    const user = await queryOne(
+      'SELECT id, full_name, email, password_hash, phone, role, state, city, pincode, is_verified, email_verified, phone_verified, aadhaar_verified, failed_login_attempts, locked_until, account_status FROM Users WHERE LOWER(email) = ? OR phone = ?',
+      [loginTarget, loginTarget]
+    );
+
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials. User with this email or phone not found.' });
+      await logAuditAction({
+        actorUserId: null,
+        action: 'user_login_failed',
+        entityType: 'User',
+        newValue: { identifier: loginTarget, reason: 'user_not_found' },
+        ipAddress: req.ip
+      });
+      return res.status(401).json({ success: false, message: GENERIC_AUTH_ERROR });
     }
 
+    // Check Account Status (Suspension check)
+    if (user.account_status === 'suspended') {
+      await logAuditAction({
+        actorUserId: user.id,
+        action: 'user_login_blocked',
+        entityType: 'User',
+        entityId: user.id,
+        newValue: { reason: 'account_suspended' },
+        ipAddress: req.ip
+      });
+      return res.status(403).json({
+        success: false,
+        message: 'Account has been suspended. Please contact system administrator.'
+      });
+    }
+
+    // Check Temporary Account Lockout Status
+    if (user.locked_until && new Date() < new Date(user.locked_until)) {
+      const remainingMs = new Date(user.locked_until).getTime() - Date.now();
+      const remainingMins = Math.ceil(remainingMs / (60 * 1000));
+      
+      await logAuditAction({
+        actorUserId: user.id,
+        action: 'user_login_blocked',
+        entityType: 'User',
+        entityId: user.id,
+        newValue: { reason: 'account_locked', remainingMins },
+        ipAddress: req.ip
+      });
+
+      return res.status(423).json({
+        success: false,
+        message: `Account is temporarily locked due to repeated failed login attempts. Please try again after ${remainingMins} minute(s).`
+      });
+    }
+
+    // Validate Password
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials. Password incorrect.' });
+      const newAttempts = (user.failed_login_attempts || 0) + 1;
+
+      if (newAttempts >= 5) {
+        // Lock account for 15 minutes
+        await execute(
+          'UPDATE Users SET failed_login_attempts = ?, locked_until = DATE_ADD(NOW(), INTERVAL 15 MINUTE) WHERE id = ?',
+          [newAttempts, user.id]
+        );
+
+        await logAuditAction({
+          actorUserId: user.id,
+          action: 'account_locked',
+          entityType: 'User',
+          entityId: user.id,
+          newValue: { consecutive_failures: newAttempts },
+          ipAddress: req.ip
+        });
+
+        return res.status(423).json({
+          success: false,
+          message: 'Account has been temporarily locked due to 5 consecutive failed login attempts. Please try again in 15 minutes.'
+        });
+      } else {
+        await execute('UPDATE Users SET failed_login_attempts = ? WHERE id = ?', [newAttempts, user.id]);
+
+        await logAuditAction({
+          actorUserId: user.id,
+          action: 'user_login_failed',
+          entityType: 'User',
+          entityId: user.id,
+          newValue: { failed_attempts: newAttempts },
+          ipAddress: req.ip
+        });
+
+        return res.status(401).json({ success: false, message: GENERIC_AUTH_ERROR });
+      }
     }
+
+    // Password is valid - reset lock & failure counter
+    await execute('UPDATE Users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?', [user.id]);
+
+    await logAuditAction({
+      actorUserId: user.id,
+      action: 'user_login_success',
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: req.ip
+    });
 
     let profile = {};
     if (user.role === 'donor') {
@@ -644,6 +758,8 @@ router.post('/login', async (req, res, next) => {
       profile = await queryOne('SELECT * FROM BloodBanks WHERE user_id = ?', [user.id]) || {};
     } else if (user.role === 'recipient') {
       profile = await queryOne('SELECT * FROM Recipients WHERE user_id = ?', [user.id]) || {};
+    } else if (user.role === 'hospital') {
+      profile = await queryOne('SELECT * FROM Hospitals WHERE user_id = ?', [user.id]) || {};
     }
 
     const token = jwt.sign(
@@ -651,6 +767,9 @@ router.post('/login', async (req, res, next) => {
       JWT_SECRET,
       { expiresIn: '7d' }
     );
+
+    // Set HTTP-only Cookie
+    res.setHeader('Set-Cookie', `token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
 
     return res.json({
       success: true,
@@ -677,17 +796,54 @@ router.post('/login', async (req, res, next) => {
 });
 
 // ============================================================================
-// 8. GET CURRENT USER PROFILE (GET /api/auth/me)
+// 8. LOGOUT USER (POST /api/auth/logout)
+// ============================================================================
+router.post('/logout', async (req, res, next) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        await logAuditAction({
+          actorUserId: decoded.id,
+          action: 'user_logout',
+          entityType: 'User',
+          entityId: decoded.id,
+          ipAddress: req.ip
+        });
+      } catch (e) {}
+    }
+
+    // Clear Cookie
+    res.setHeader('Set-Cookie', 'token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+
+    return res.json({
+      success: true,
+      message: 'Logged out successfully.'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================================================
+// 9. GET CURRENT USER PROFILE (GET /api/auth/me)
 // ============================================================================
 router.get('/me', authenticateToken, async (req, res, next) => {
   try {
     const user = await queryOne(
-      'SELECT id, full_name, email, phone, role, state, city, pincode, email_verified, phone_verified, aadhaar_verified, created_at FROM Users WHERE id = ?',
+      'SELECT id, full_name, email, phone, role, state, city, pincode, is_verified, email_verified, phone_verified, aadhaar_verified, account_status, created_at FROM Users WHERE id = ?',
       [req.user.id]
     );
 
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (user.account_status === 'suspended') {
+      return res.status(403).json({ success: false, message: 'Account has been suspended.' });
     }
 
     let profile = {};
@@ -697,6 +853,8 @@ router.get('/me', authenticateToken, async (req, res, next) => {
       profile = await queryOne('SELECT * FROM BloodBanks WHERE user_id = ?', [user.id]) || {};
     } else if (user.role === 'recipient') {
       profile = await queryOne('SELECT * FROM Recipients WHERE user_id = ?', [user.id]) || {};
+    } else if (user.role === 'hospital') {
+      profile = await queryOne('SELECT * FROM Hospitals WHERE user_id = ?', [user.id]) || {};
     }
 
     return res.json({ success: true, user: { ...user, profile } });
@@ -707,34 +865,117 @@ router.get('/me', authenticateToken, async (req, res, next) => {
 });
 
 // ============================================================================
-// 9. FORGOT PASSWORD (POST /api/auth/forgot-password)
+// 10. FORGOT PASSWORD (POST /api/auth/forgot-password)
 // ============================================================================
 router.post('/forgot-password', async (req, res, next) => {
   try {
     const { email } = req.body;
-    const user = await queryOne('SELECT id FROM Users WHERE email = ?', [email]);
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Registered email address not found' });
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, message: 'Email address is required.' });
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await queryOne('SELECT id FROM Users WHERE LOWER(email) = ?', [cleanEmail]);
+
+    if (user) {
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const resetHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+      await execute(
+        'UPDATE Users SET password_reset_token = ?, password_reset_expires = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id = ?',
+        [resetHash, user.id]
+      );
+
+      await logAuditAction({
+        actorUserId: user.id,
+        action: 'password_reset_requested',
+        entityType: 'User',
+        entityId: user.id,
+        ipAddress: req.ip
+      });
+
+      console.log(`[PASSWORD RESET DEV TOKEN] Email: ${cleanEmail} -> Reset Token: ${resetToken}`);
+    }
+
+    // Always return generic success message to prevent user email enumeration
     return res.json({ 
       success: true, 
-      message: 'Password reset instructions have been dispatched to your email address.' 
+      message: 'If an account associated with that email address exists, password reset instructions have been generated.' 
     });
+
   } catch (error) {
     next(error);
   }
 });
 
 // ============================================================================
-// 10. DELETE CURRENT USER ACCOUNT (DELETE /api/auth/me)
+// 11. RESET PASSWORD (POST /api/auth/reset-password)
+// ============================================================================
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { token, new_password } = req.body;
+    if (!token || !new_password) {
+      return res.status(400).json({ success: false, message: 'Reset token and new password are required.' });
+    }
+
+    const strength = validatePasswordStrength(new_password);
+    if (!strength.isValid) {
+      return res.status(400).json({ success: false, message: strength.message });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token.trim()).digest('hex');
+    const user = await queryOne(
+      'SELECT id, email FROM Users WHERE password_reset_token = ? AND password_reset_expires > NOW()',
+      [tokenHash]
+    );
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired password reset token.' });
+    }
+
+    const newPasswordHash = await bcrypt.hash(new_password, 10);
+
+    await execute(
+      'UPDATE Users SET password_hash = ?, password_reset_token = NULL, password_reset_expires = NULL, failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
+      [newPasswordHash, user.id]
+    );
+
+    await logAuditAction({
+      actorUserId: user.id,
+      action: 'password_reset_completed',
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: req.ip
+    });
+
+    return res.json({
+      success: true,
+      message: 'Password reset successfully! You may now sign in with your new password.'
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================================================
+// 12. DELETE CURRENT USER ACCOUNT (DELETE /api/auth/me)
 // ============================================================================
 router.delete('/me', authenticateToken, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
+    await logAuditAction({
+      actorUserId: userId,
+      action: 'user_account_deleted',
+      entityType: 'User',
+      entityId: userId,
+      ipAddress: req.ip
+    });
+
     await execute('DELETE FROM Donors WHERE user_id = ?', [userId]);
     await execute('DELETE FROM Recipients WHERE user_id = ?', [userId]);
+    await execute('DELETE FROM Hospitals WHERE user_id = ?', [userId]);
     
     const bank = await queryOne('SELECT id FROM BloodBanks WHERE user_id = ?', [userId]);
     if (bank) {
@@ -747,6 +988,8 @@ router.delete('/me', authenticateToken, async (req, res, next) => {
     await execute('DELETE FROM BloodRequests WHERE requester_id = ?', [userId]);
     await execute('DELETE FROM Users WHERE id = ?', [userId]);
 
+    res.setHeader('Set-Cookie', 'token=; Path=/; HttpOnly; SameSite=Lax; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+
     return res.json({
       success: true,
       message: 'Account and associated profile data deleted successfully.'
@@ -758,3 +1001,4 @@ router.delete('/me', authenticateToken, async (req, res, next) => {
 });
 
 module.exports = router;
+

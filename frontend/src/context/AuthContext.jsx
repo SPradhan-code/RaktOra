@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getCurrentUser, loginUser, registerUser, deleteMyAccount } from '../services/api';
+import { getCurrentUser, loginUser, registerUser, logoutUser, deleteMyAccount } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -15,28 +15,33 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    if (token) {
-      getCurrentUser()
-        .then(res => {
-          if (res && res.success) {
-            setUser(res.user);
-          } else {
-            logout();
-          }
-        })
-        .catch(() => logout())
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+    // Attempt fetching current session
+    getCurrentUser()
+      .then(res => {
+        if (res && res.success) {
+          setUser(res.user);
+        } else {
+          logout();
+        }
+      })
+      .catch(() => {
+        if (token) {
+          localStorage.removeItem('bloodconnect_token');
+          setToken(null);
+          setUser(null);
+        }
+      })
+      .finally(() => setLoading(false));
   }, [token]);
 
   const login = async (credentials) => {
     try {
       const res = await loginUser(credentials);
       if (res && res.success) {
-        localStorage.setItem('bloodconnect_token', res.token);
-        setToken(res.token);
+        if (res.token) {
+          localStorage.setItem('bloodconnect_token', res.token);
+          setToken(res.token);
+        }
         setUser(res.user);
         showToast(`Welcome back, ${res.user.full_name}!`, 'success');
         return res;
@@ -51,10 +56,12 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await registerUser(userData);
       if (res && res.success) {
-        localStorage.setItem('bloodconnect_token', res.token);
-        setToken(res.token);
+        if (res.token) {
+          localStorage.setItem('bloodconnect_token', res.token);
+          setToken(res.token);
+        }
         setUser(res.user);
-        showToast('Registration successful! Welcome to BloodConnect.', 'success');
+        showToast('Registration successful! Welcome to RaktOra.', 'success');
         return res;
       }
     } catch (err) {
@@ -63,7 +70,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await logoutUser();
+    } catch (e) {}
     localStorage.removeItem('bloodconnect_token');
     setToken(null);
     setUser(null);

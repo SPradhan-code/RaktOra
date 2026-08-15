@@ -281,10 +281,11 @@ router.get('/audit-logs', async (req, res, next) => {
 // ============================================================================
 router.get('/users', async (req, res, next) => {
   try {
-    const { role, state, city } = req.query;
+    const { role, state, city, status } = req.query;
 
     let sql = `
-      SELECT u.id, u.full_name, u.email, u.phone, u.role, u.state, u.city, u.pincode, u.is_verified, u.created_at
+      SELECT u.id, u.full_name, u.email, u.phone, u.role, u.state, u.city, u.pincode, 
+             u.is_verified, u.account_status, u.failed_login_attempts, u.locked_until, u.created_at
       FROM Users u
       WHERE 1=1
     `;
@@ -293,6 +294,11 @@ router.get('/users', async (req, res, next) => {
     if (role && role !== 'All') {
       sql += ` AND u.role = ?`;
       params.push(role);
+    }
+
+    if (status && status !== 'All') {
+      sql += ` AND u.account_status = ?`;
+      params.push(status);
     }
 
     if (state && state !== 'All States' && state !== 'All') {
@@ -309,6 +315,87 @@ router.get('/users', async (req, res, next) => {
 
     const users = await query(sql, params);
     return res.json({ success: true, count: users.length, users });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================================================
+// 7. ACTIVATE OR SUSPEND USER ACCOUNT (PATCH /api/admin/users/:id/status)
+// ============================================================================
+router.patch('/users/:id/status', async (req, res, next) => {
+  try {
+    const { account_status } = req.body;
+    const validStatuses = ['active', 'suspended', 'deactivated'];
+
+    if (!validStatuses.includes(account_status)) {
+      return res.status(400).json({ success: false, message: 'Invalid account_status value. Allowed: active, suspended, deactivated' });
+    }
+
+    const targetUser = await queryOne('SELECT id, full_name, email, role, account_status FROM Users WHERE id = ?', [req.params.id]);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (targetUser.role === 'admin' && account_status === 'suspended') {
+      return res.status(400).json({ success: false, message: 'Cannot suspend System Administrator account.' });
+    }
+
+    await execute(
+      'UPDATE Users SET account_status = ?, failed_login_attempts = 0, locked_until = NULL WHERE id = ?',
+      [account_status, targetUser.id]
+    );
+
+    await logAuditAction({
+      actorUserId: req.user.id,
+      action: `user_account_${account_status}`,
+      entityType: 'User',
+      entityId: targetUser.id,
+      oldValue: { account_status: targetUser.account_status },
+      newValue: { account_status },
+      ipAddress: req.ip
+    });
+
+    return res.json({
+      success: true,
+      message: `Account status for ${targetUser.full_name} (${targetUser.email}) updated to '${account_status}'`
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================================================
+// 8. TOGGLE USER VERIFICATION (PATCH /api/admin/users/:id/verify)
+// ============================================================================
+router.patch('/users/:id/verify', async (req, res, next) => {
+  try {
+    const { is_verified } = req.body;
+    const targetUser = await queryOne('SELECT id, full_name, is_verified FROM Users WHERE id = ?', [req.params.id]);
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const newVerified = is_verified ? 1 : 0;
+    await execute('UPDATE Users SET is_verified = ? WHERE id = ?', [newVerified, targetUser.id]);
+
+    await logAuditAction({
+      actorUserId: req.user.id,
+      action: newVerified ? 'user_verified' : 'user_unverified',
+      entityType: 'User',
+      entityId: targetUser.id,
+      oldValue: { is_verified: targetUser.is_verified },
+      newValue: { is_verified: newVerified },
+      ipAddress: req.ip
+    });
+
+    return res.json({
+      success: true,
+      message: `User verification status updated to ${newVerified ? 'Verified' : 'Unverified'}`
+    });
 
   } catch (error) {
     next(error);

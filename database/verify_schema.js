@@ -26,7 +26,7 @@ const REQUIRED_TABLES = [
 ];
 
 const MANDATORY_COLUMNS = {
-  Users: ['id', 'email', 'password_hash', 'phone', 'role', 'state', 'city', 'latitude', 'longitude', 'emergency_alerts_enabled', 'available_for_donation', 'email_verified', 'phone_verified', 'aadhaar_verified'],
+  Users: ['id', 'email', 'password_hash', 'phone', 'role', 'state', 'city', 'latitude', 'longitude', 'emergency_alerts_enabled', 'available_for_donation', 'email_verified', 'phone_verified', 'aadhaar_verified', 'failed_login_attempts', 'locked_until', 'account_status', 'password_reset_token', 'password_reset_expires'],
   Donors: ['id', 'user_id', 'blood_group', 'age', 'gender', 'weight', 'last_donation_date', 'is_available', 'latitude', 'longitude', 'govt_id', 'health_notes'],
   Hospitals: ['id', 'user_id', 'name', 'license_number', 'phone', 'email', 'state', 'city', 'verification_status'],
   BloodBanks: ['id', 'user_id', 'name', 'license_number', 'phone', 'email', 'is_approved'],

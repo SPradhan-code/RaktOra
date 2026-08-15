@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getAdminAnalytics, getAdminUsers, getAdminHospitals, updateHospitalStatus, getAdminAuditLogs, toggleUserVerification } from '../../services/api';
-import { ShieldCheck, Users, Building2, Droplet, Activity, CheckCircle2, XCircle, BarChart3, AlertCircle, FileText, Clock, RefreshCw, Lock, TrendingUp, AlertTriangle } from 'lucide-react';
+import { getAdminAnalytics, getAdminUsers, getAdminHospitals, updateHospitalStatus, getAdminAuditLogs, toggleUserVerification, updateUserStatus } from '../../services/api';
+import { ShieldCheck, Users, Building2, Droplet, Activity, CheckCircle2, XCircle, BarChart3, AlertCircle, FileText, Clock, RefreshCw, Lock, TrendingUp, AlertTriangle, UserX, UserCheck } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { showToast } = useAuth();
@@ -58,6 +58,19 @@ export default function AdminDashboard() {
       fetchAdminData();
     } catch (err) {
       showToast('Action failed', 'error');
+    }
+  };
+
+  const handleToggleAccountStatus = async (userId, currentStatus) => {
+    const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
+    try {
+      const res = await updateUserStatus(userId, newStatus);
+      if (res.success) {
+        showToast(`Account status updated to '${newStatus}'`, 'success');
+        fetchAdminData();
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to update account status', 'error');
     }
   };
 
@@ -333,18 +346,38 @@ export default function AdminDashboard() {
                     <td className="p-3 font-semibold text-slate-700 uppercase">{u.role}</td>
                     <td className="p-3 text-slate-600">{u.city}, {u.state}</td>
                     <td className="p-3 text-slate-600">{u.phone}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${u.is_verified ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                    <td className="p-3 space-y-1">
+                      <span className={`px-2 py-0.5 rounded font-bold text-[10px] inline-block mr-1 ${u.is_verified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                         {u.is_verified ? 'Verified' : 'Unverified'}
                       </span>
+                      <span className={`px-2 py-0.5 rounded font-bold text-[10px] inline-block ${u.account_status === 'suspended' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700'}`}>
+                        {u.account_status || 'active'}
+                      </span>
+                      {u.locked_until && new Date() < new Date(u.locked_until) && (
+                        <span className="bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold text-[9px] block">
+                          🔒 Locked
+                        </span>
+                      )}
                     </td>
-                    <td className="p-3 text-right">
+                    <td className="p-3 text-right space-x-1">
                       <button
                         onClick={() => handleToggleUserVerif(u.id, u.is_verified)}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1 rounded-lg text-[10px]"
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2 py-1 rounded-lg text-[10px]"
                       >
                         {u.is_verified ? 'Revoke' : 'Verify'}
                       </button>
+                      {u.role !== 'admin' && (
+                        <button
+                          onClick={() => handleToggleAccountStatus(u.id, u.account_status)}
+                          className={`font-bold px-2 py-1 rounded-lg text-[10px] text-white ${
+                            u.account_status === 'suspended' 
+                              ? 'bg-emerald-600 hover:bg-emerald-700' 
+                              : 'bg-red-600 hover:bg-red-700'
+                          }`}
+                        >
+                          {u.account_status === 'suspended' ? 'Activate' : 'Suspend'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

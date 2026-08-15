@@ -417,6 +417,9 @@ export default function Register() {
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-red-500 focus:outline-none"
               />
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                Min 8 chars, 1 uppercase, 1 lowercase, 1 number & 1 special character (!@#$).
+              </span>
             </div>
 
             <div>
@@ -540,14 +543,10 @@ export default function Register() {
 
           <button
             type="submit"
-            disabled={loading || (!emailVerified && !phoneVerified)}
-            className={`w-full text-white font-bold text-sm py-3.5 rounded-xl shadow-lg transition-all ${
-              (emailVerified || phoneVerified) 
-                ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20 hover:scale-[1.01]' 
-                : 'bg-slate-400 cursor-not-allowed'
-            }`}
+            disabled={loading}
+            className="w-full text-white font-bold text-sm py-3.5 rounded-xl shadow-lg transition-all bg-red-600 hover:bg-red-700 shadow-red-600/20 hover:scale-[1.01]"
           >
-            {loading ? 'Securing & Creating Account...' : `Complete Verified ${role.replace('_', ' ')} Registration`}
+            {loading ? 'Securing & Creating Account...' : `Complete ${role.replace('_', ' ')} Registration`}
           </button>
         </form>
 

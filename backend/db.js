@@ -63,7 +63,7 @@ const pool = mysql.createPool(connectionConfig);
       await connection.query('ALTER TABLE Donors ADD COLUMN health_notes TEXT NULL');
     } catch (e) {}
 
-    // 4. Ensure Users table has verification flag & DigiLocker columns
+    // 4. Ensure Users table has verification flag & DigiLocker columns & Auth Security Upgrade columns
     const userColumns = [
       'email_verified', 'phone_verified', 'aadhaar_verified', 
       'email_verified_at', 'phone_verified_at', 'aadhaar_verified_at',
@@ -80,6 +80,13 @@ const pool = mysql.createPool(connectionConfig);
         }
       } catch (e) {}
     }
+
+    try { await connection.query("ALTER TABLE Users ADD COLUMN failed_login_attempts INT NOT NULL DEFAULT 0"); } catch (e) {}
+    try { await connection.query("ALTER TABLE Users ADD COLUMN locked_until DATETIME NULL"); } catch (e) {}
+    try { await connection.query("ALTER TABLE Users ADD COLUMN account_status ENUM('active', 'suspended', 'deactivated') NOT NULL DEFAULT 'active'"); } catch (e) {}
+    try { await connection.query("ALTER TABLE Users ADD COLUMN password_reset_token VARCHAR(255) NULL"); } catch (e) {}
+    try { await connection.query("ALTER TABLE Users ADD COLUMN password_reset_expires DATETIME NULL"); } catch (e) {}
+
 
     // 5. Create Hospitals table
     await connection.query(`
