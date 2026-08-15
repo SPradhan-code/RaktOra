@@ -21,9 +21,9 @@ router.get('/analytics', async (req, res, next) => {
 
     // 1. Donor Metrics & Retention
     const totalDonors = (await queryOne('SELECT COUNT(*) as c FROM Donors')).c;
-    const verifiedDonors = (await queryOne('SELECT COUNT(*) as c FROM Users WHERE role = "donor" AND is_verified = 1')).c;
+    const verifiedDonors = (await queryOne("SELECT COUNT(*) as c FROM Users WHERE role = 'donor' AND is_verified = 1")).c;
     const activeDonors = (await queryOne('SELECT COUNT(*) as c FROM Donors WHERE is_available = 1')).c;
-    const newDonorsThisMonth = (await queryOne('SELECT COUNT(*) as c FROM Users WHERE role = "donor"' + dateClause)).c;
+    const newDonorsThisMonth = (await queryOne("SELECT COUNT(*) as c FROM Users WHERE role = 'donor'" + dateClause)).c;
     const repeatDonors = (await queryOne('SELECT COUNT(*) as c FROM Donors WHERE total_donations > 1')).c;
 
     const donorConversionRate = totalDonors > 0 ? parseFloat(((verifiedDonors / totalDonors) * 100).toFixed(1)) : 0;
@@ -32,10 +32,10 @@ router.get('/analytics', async (req, res, next) => {
     // 2. Inventory Metrics & Wastage Rate
     const aggregateUnits = (await queryOne('SELECT COALESCE(SUM(units_available), 0) as total FROM BloodStock')).total;
     const totalTrackedUnits = (await queryOne('SELECT COUNT(*) as c FROM blood_units')).c;
-    const availableTracked = (await queryOne('SELECT COUNT(*) as c FROM blood_units WHERE status = "AVAILABLE"')).c;
-    const expiringSoonUnits = (await queryOne('SELECT COUNT(*) as c FROM blood_units WHERE status = "AVAILABLE" AND expiry_date BETWEEN CURRENT_DATE() AND DATE_ADD(CURRENT_DATE(), INTERVAL 3 DAY)')).c;
-    const expiredUnits = (await queryOne('SELECT COUNT(*) as c FROM blood_units WHERE status = "EXPIRED"')).c;
-    const discardedUnits = (await queryOne('SELECT COUNT(*) as c FROM blood_units WHERE status = "DISCARDED"')).c;
+    const availableTracked = (await queryOne("SELECT COUNT(*) as c FROM blood_units WHERE status = 'AVAILABLE'")).c;
+    const expiringSoonUnits = (await queryOne("SELECT COUNT(*) as c FROM blood_units WHERE status = 'AVAILABLE' AND expiry_date BETWEEN CURRENT_DATE() AND DATE_ADD(CURRENT_DATE(), INTERVAL 3 DAY)")).c;
+    const expiredUnits = (await queryOne("SELECT COUNT(*) as c FROM blood_units WHERE status = 'EXPIRED'")).c;
+    const discardedUnits = (await queryOne("SELECT COUNT(*) as c FROM blood_units WHERE status = 'DISCARDED'")).c;
 
     const wastageRate = totalTrackedUnits > 0 
       ? parseFloat((((expiredUnits + discardedUnits) / totalTrackedUnits) * 100).toFixed(1)) 
@@ -55,9 +55,9 @@ router.get('/analytics', async (req, res, next) => {
 
     // 3. Request Metrics & Fulfillment Rate
     const totalRequests = (await queryOne('SELECT COUNT(*) as c FROM BloodRequests WHERE 1=1' + dateClause)).c;
-    const emergencyRequests = (await queryOne('SELECT COUNT(*) as c FROM BloodRequests WHERE urgency_level IN ("Urgent", "Critical")' + dateClause)).c;
-    const fulfilledRequests = (await queryOne('SELECT COUNT(*) as c FROM BloodRequests WHERE status IN ("FULFILLED", "Fulfilled")' + dateClause)).c;
-    const pendingRequests = (await queryOne('SELECT COUNT(*) as c FROM BloodRequests WHERE status IN ("Pending", "MATCHING", "APPROVED", "VERIFICATION_PENDING")' + dateClause)).c;
+    const emergencyRequests = (await queryOne("SELECT COUNT(*) as c FROM BloodRequests WHERE urgency_level IN ('Urgent', 'Critical')" + dateClause)).c;
+    const fulfilledRequests = (await queryOne("SELECT COUNT(*) as c FROM BloodRequests WHERE status IN ('FULFILLED', 'Fulfilled')" + dateClause)).c;
+    const pendingRequests = (await queryOne("SELECT COUNT(*) as c FROM BloodRequests WHERE status IN ('Pending', 'MATCHING', 'APPROVED', 'VERIFICATION_PENDING')" + dateClause)).c;
 
     const fulfillmentRate = totalRequests > 0 ? parseFloat(((fulfilledRequests / totalRequests) * 100).toFixed(1)) : 0;
 
@@ -84,8 +84,8 @@ router.get('/analytics', async (req, res, next) => {
 
     // 6. Hospital Statistics
     const totalHospitals = (await queryOne('SELECT COUNT(*) as c FROM Hospitals')).c;
-    const verifiedHospitals = (await queryOne('SELECT COUNT(*) as c FROM Hospitals WHERE verification_status = "VERIFIED"')).c;
-    const pendingHospitals = (await queryOne('SELECT COUNT(*) as c FROM Hospitals WHERE verification_status = "PENDING_VERIFICATION"')).c;
+    const verifiedHospitals = (await queryOne("SELECT COUNT(*) as c FROM Hospitals WHERE verification_status = 'VERIFIED'")).c;
+    const pendingHospitals = (await queryOne("SELECT COUNT(*) as c FROM Hospitals WHERE verification_status = 'PENDING_VERIFICATION'")).c;
     const activeHospitalRequesters = (await queryOne('SELECT COUNT(DISTINCT hospital_id) as c FROM BloodRequests WHERE hospital_id IS NOT NULL')).c;
 
     return res.json({

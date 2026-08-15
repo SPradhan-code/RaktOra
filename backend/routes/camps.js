@@ -120,7 +120,7 @@ router.post('/:id/register', authenticateToken, async (req, res, next) => {
     }
 
     await execute(
-      'INSERT INTO CampRegistrations (camp_id, donor_user_id, status) VALUES (?, ?, "Registered")',
+      "INSERT INTO CampRegistrations (camp_id, donor_user_id, status) VALUES (?, ?, 'Registered')",
       [campId, req.user.id]
     );
 

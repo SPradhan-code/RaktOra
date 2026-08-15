@@ -67,7 +67,7 @@ router.post('/send-email-otp', async (req, res, next) => {
 
     // 60-Second Resend Cooldown Check
     const latest = await queryOne(
-      'SELECT created_at FROM otp_verifications WHERE (identifier = ? OR email = ?) AND type = "email" ORDER BY id DESC LIMIT 1',
+      "SELECT created_at FROM otp_verifications WHERE (identifier = ? OR email = ?) AND type = 'email' ORDER BY id DESC LIMIT 1",
       [cleanEmail, cleanEmail]
     );
 
@@ -88,7 +88,7 @@ router.post('/send-email-otp', async (req, res, next) => {
 
     // Invalidate previous unverified OTPs
     await execute(
-      'UPDATE otp_verifications SET verified = 1 WHERE (identifier = ? OR email = ?) AND type = "email" AND verified = 0',
+      "UPDATE otp_verifications SET verified = 1 WHERE (identifier = ? OR email = ?) AND type = 'email' AND verified = 0",
       [cleanEmail, cleanEmail]
     );
 
@@ -204,7 +204,7 @@ router.post('/send-phone-otp', async (req, res, next) => {
 
     // 60-Second Resend Cooldown Check
     const latest = await queryOne(
-      'SELECT created_at FROM otp_verifications WHERE (identifier = ? OR phone = ?) AND type = "phone" ORDER BY id DESC LIMIT 1',
+      "SELECT created_at FROM otp_verifications WHERE (identifier = ? OR phone = ?) AND type = 'phone' ORDER BY id DESC LIMIT 1",
       [formattedPhone, formattedPhone]
     );
 
@@ -225,7 +225,7 @@ router.post('/send-phone-otp', async (req, res, next) => {
 
     // Invalidate previous unverified OTPs
     await execute(
-      'UPDATE otp_verifications SET verified = 1 WHERE (identifier = ? OR phone = ?) AND type = "phone" AND verified = 0',
+      "UPDATE otp_verifications SET verified = 1 WHERE (identifier = ? OR phone = ?) AND type = 'phone' AND verified = 0",
       [formattedPhone, formattedPhone]
     );
 
