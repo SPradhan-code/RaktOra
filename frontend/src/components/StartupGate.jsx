@@ -35,6 +35,7 @@ export default function StartupGate({ children }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isProbing, setIsProbing] = useState(false);
 
+  const isReadyRef = useRef(false);
   const attemptCountRef = useRef(0);
   const startTimeRef = useRef(Date.now());
   const activeAbortControllerRef = useRef(null);
@@ -69,7 +70,7 @@ export default function StartupGate({ children }) {
   }, []);
 
   const probeReadiness = useCallback(async () => {
-    if (!isMountedRef.current || isReady) return;
+    if (!isMountedRef.current || isReadyRef.current) return;
 
     // Check if max overall timeout has been exceeded
     const totalElapsed = Date.now() - startTimeRef.current;
@@ -114,6 +115,7 @@ export default function StartupGate({ children }) {
         const data = await response.json().catch(() => ({}));
         if (data.status === 'ready' || data.status === 'ok') {
           cleanup();
+          isReadyRef.current = true;
           setIsReady(true);
           return;
         }
@@ -128,19 +130,20 @@ export default function StartupGate({ children }) {
       // Network error, connection refused, or aborted probe -> retry with backoff
       scheduleNextProbe();
     }
-  }, [isReady, cleanup]);
+  }, [cleanup]);
 
   const scheduleNextProbe = useCallback(() => {
-    if (!isMountedRef.current || isReady) return;
+    if (!isMountedRef.current || isReadyRef.current) return;
 
     const delay = getBackoffDelay(attemptCountRef.current);
     timerRef.current = setTimeout(() => {
       probeReadiness();
     }, delay);
-  }, [isReady, probeReadiness]);
+  }, [probeReadiness]);
 
   const startReadinessSequence = useCallback(() => {
     cleanup();
+    isReadyRef.current = false;
     setIsReady(false);
     setHasTimedOut(false);
     setElapsedSeconds(0);
