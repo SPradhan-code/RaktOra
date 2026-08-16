@@ -62,7 +62,36 @@ app.get('/api/features', (req, res) => {
   });
 });
 
-// Health Check Endpoint
+// Canonical Health (Liveness) Endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'raktora-api',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Canonical Readiness (Dependency/DB) Endpoint
+app.get('/ready', async (req, res) => {
+  try {
+    await db.queryOne('SELECT 1');
+    res.status(200).json({
+      status: 'ready',
+      service: 'raktora-api',
+      database: 'connected',
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'unready',
+      service: 'raktora-api',
+      database: 'unavailable',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// API Aliases for Backward Compatibility
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
@@ -70,6 +99,25 @@ app.get('/api/health', (req, res) => {
     database: 'MySQL / MariaDB (Aiven Connected)',
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/api/ready', async (req, res) => {
+  try {
+    await db.queryOne('SELECT 1');
+    res.status(200).json({
+      status: 'ready',
+      service: 'raktora-api',
+      database: 'connected',
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'unready',
+      service: 'raktora-api',
+      database: 'unavailable',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Serve Frontend Static Build
