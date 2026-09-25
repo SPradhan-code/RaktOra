@@ -154,8 +154,8 @@ app.use(notFound);
 app.use(errorHandler);
 
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`RaktOra REST API running on http://localhost:${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`RaktOra REST API listening on port ${PORT}`);
   });
 }
 
