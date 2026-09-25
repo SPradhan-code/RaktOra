@@ -132,7 +132,7 @@ RaktOra separates **Liveness** from **Readiness** to support container orchestra
 ### 5.1 Liveness Probe (`GET /health`)
 * **Purpose**: Verifies that the Node.js process and HTTP server are accepting connections.
 * **Database Dependency**: None (fast, instant response).
-* **Render Integration**: Used as `healthCheckPath` in `render.yaml` for rolling zero-downtime deployments.
+* **Render Integration**: `healthCheckPath` in `render.yaml` is set to `/ready` (database-verifying readiness probe) for rolling zero-downtime deployments.
 * **Payload**:
   ```json
   {

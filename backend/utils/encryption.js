@@ -4,7 +4,7 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 // Secret key for AES-256-GCM encryption (32 bytes derived from ENCRYPTION_KEY or JWT_SECRET)
 function getDerivedKey() {
-  const secretSource = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'bloodconnect_fallback_secure_dev_key_2026';
+  const secretSource = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'raktora_fallback_secure_dev_key_2026';
   return crypto.createHash('sha256').update(secretSource).digest();
 }
 

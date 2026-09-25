@@ -29,12 +29,12 @@ RaktOra is configured as a unified single-service web application on Render.
 | Setting | Value | Description |
 |---|---|---|
 | **Service Type** | Web Service | Node.js Environment |
-| **Name** | `bloodconnect` | Service Identifier |
+| **Name** | `raktora` | Service Identifier |
 | **Branch** | `main` | Production deployment trigger branch |
 | **Runtime** | `Node` | Node.js 20+ |
 | **Build Command** | `npm run build` | Installs dependencies & builds frontend Vite bundle into `frontend/dist` |
 | **Start Command** | `npm start` | Starts Express production server (`node backend/server.js`) |
-| **Health Check Path**| `/health` | Zero-downtime health verification probe |
+| **Health Check Path**| `/ready` | Readiness probe that verifies database connectivity before routing live traffic |
 | **Auto-Deploy** | `Yes` | Deploys automatically on commit to `main` |
 
 ---
@@ -52,11 +52,11 @@ Configure these variables in your Render Dashboard under **Service Settings $\ri
 | `DB_PORT` | **Yes** | `3306` | Database port (or provider-specific port). |
 | `DB_USER` | **Yes** | `avnadmin` | Database username. |
 | `DB_PASSWORD` | **Yes** | `[Your Cloud DB Password]` | Database password. |
-| `DB_NAME` | **Yes** | `defaultdb` or `bloodconnect_db` | Target database name. |
+| `DB_NAME` | **Yes** | `defaultdb` or `raktora_db` | Target database name. |
 | `DB_SSL` | **Yes** | `true` | Enables TLS/SSL encryption for cloud database connections. |
 | `ADMIN_REGISTRATION_SECRET` | Recommended | `[Generate Random 24+ chars]` | Security key required to register system administrator accounts. |
-| `ALLOWED_ORIGINS` | Optional | `https://bloodconnect.onrender.com` | Comma-separated list of additional permitted browser origins for CORS. |
-| `FRONTEND_URL` | Optional | `https://bloodconnect.onrender.com` | Canonical frontend domain used for redirects and email links. |
+| `ALLOWED_ORIGINS` | Optional | `https://raktora.onrender.com` | Comma-separated list of additional permitted browser origins for CORS. |
+| `FRONTEND_URL` | Optional | `https://raktora.onrender.com` | Canonical frontend domain used for redirects and email links. |
 
 ---
 
@@ -74,7 +74,7 @@ Configure these variables in your Render Dashboard under **Service Settings $\ri
 1. Click **New +** $\rightarrow$ **Web Service**.
 2. Connect your `RaktOra` repository.
 3. Configure the fields:
-   - **Name**: `bloodconnect`
+   - **Name**: `raktora`
    - **Environment**: `Node`
    - **Branch**: `main`
    - **Build Command**: `npm run build`
@@ -96,7 +96,7 @@ To run migrations against your production database:
 export DB_HOST="your-production-db-host.com"
 export DB_USER="your-db-user"
 export DB_PASSWORD="your-db-password"
-export DB_NAME="bloodconnect_db"
+export DB_NAME="raktora_db"
 export DB_SSL="true"
 
 npm run migrate
@@ -150,7 +150,7 @@ Render streams structured logs in real time from the dashboard under **Logs**:
 ## 8. Rollback Procedure
 
 If a production deployment introduces unexpected regressions:
-1. In the Render Dashboard, navigate to your `bloodconnect` service.
+1. In the Render Dashboard, navigate to your `raktora` service.
 2. Click **Events**.
 3. Locate the last known good deployment.
 4. Click the three dots ($\dots$) and select **Rollback to this deploy**.

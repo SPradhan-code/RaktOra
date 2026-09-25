@@ -1,4 +1,7 @@
-name: Deploy Frontend to GitHub Pages
+# Optional: GitHub Pages deployment for decoupled frontend previews.
+# NOTE: Render is the canonical production deployment for RaktOra.
+# This workflow is only needed if hosting the frontend separately on GitHub Pages.
+name: Deploy Frontend to GitHub Pages (Optional / Legacy)
 
 on:
   push:
@@ -27,14 +30,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Frontend Dependencies
         run: |
           cd frontend
-          npm ci || npm install
+          npm ci
 
       - name: Build Frontend
         env:

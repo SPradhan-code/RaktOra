@@ -42,7 +42,7 @@ In production (`NODE_ENV=production`), Express enforces strict origin allowlisti
 ### Resolution
 Add your domain to `ALLOWED_ORIGINS` or `FRONTEND_URL` in the Render Environment Variables:
 ```env
-ALLOWED_ORIGINS=https://bloodconnect.onrender.com,https://yourcustomdomain.com
+ALLOWED_ORIGINS=https://raktora.onrender.com,https://yourcustomdomain.com
 FRONTEND_URL=https://yourcustomdomain.com
 ```
 Re-deploy or save variables; the server will reload origin policies dynamically.
@@ -102,7 +102,7 @@ A migration file contains SQL syntax incompatible with your MySQL version or ref
 
 If a bad commit was deployed to production:
 1. Open the [Render Dashboard](https://dashboard.render.com/).
-2. Select your `bloodconnect` Web Service.
+2. Select your `raktora` Web Service.
 3. Go to the **Events** tab.
 4. Find the last successful deployment.
 5. Click **Rollback to this deploy**.

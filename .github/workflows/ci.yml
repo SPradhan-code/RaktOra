@@ -31,13 +31,13 @@ jobs:
           cache: 'npm'
 
       - name: 📦 Install root dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: 📦 Install backend dependencies
-        run: npm ci --prefix backend || npm install --prefix backend
+        run: npm ci --prefix backend
 
       - name: 📦 Install frontend dependencies
-        run: npm ci --prefix frontend || npm install --prefix frontend
+        run: npm ci --prefix frontend
 
       - name: 🧪 Run Backend Automated Tests (90 Tests Across 14 Suites)
         env:

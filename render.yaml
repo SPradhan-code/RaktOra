@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: bloodconnect
+    name: raktora
     env: node
     plan: free
     buildCommand: npm run build

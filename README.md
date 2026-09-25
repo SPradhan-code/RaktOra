@@ -72,7 +72,7 @@ RaktOra runs an automated continuous delivery pipeline:
 
 $$\text{Antigravity IDE} \longrightarrow \text{GitHub} \xrightarrow{\text{GitHub Actions CI}} \text{Render Web Service} \longrightarrow \text{Production}$$
 
-* **Production URL**: Configured on Render (e.g. `https://bloodconnect.onrender.com`).
+* **Production URL**: Configured on Render (e.g. `https://raktora.onrender.com`).
 * **Deployment Type**: Unified Full-Stack Node.js Service (Express serves both REST API routes and compiled React production assets).
 * **Liveness Probe**: `GET /health` (monitored automatically by Render for zero-downtime rolling deploys).
 * **Readiness Probe**: `GET /ready` (probed by frontend `StartupGate` to ensure database availability).
@@ -107,7 +107,7 @@ NODE_ENV=development
 DB_HOST=localhost
 DB_USER=root
 DB_PASSWORD=your_mysql_password
-DB_NAME=bloodconnect_db
+DB_NAME=raktora_db
 DB_PORT=3306
 DB_SSL=false
 JWT_SECRET=super-secret-jwt-key-for-local-dev-only

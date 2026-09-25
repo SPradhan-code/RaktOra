@@ -1,7 +1,7 @@
 {
-  "name": "bloodconnect-backend",
+  "name": "raktora-backend",
   "version": "1.0.0",
-  "description": "Node.js & Express API for BloodConnect Blood Donor Management System",
+  "description": "Node.js & Express REST API for RaktOra — National Voluntary Blood Network & Smart FEFO Inventory Engine",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {

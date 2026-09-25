@@ -2,7 +2,7 @@ const { execute } = require('./db');
 const bcrypt = require('bcryptjs');
 
 async function seedDatabase() {
-  console.log('Seeding BloodConnect MySQL Database...');
+  console.log('Seeding RaktOra MySQL Database...');
 
   try {
     // Password hash for 'password123'
