@@ -124,6 +124,16 @@ export default function BecomeDonor() {
         )}
       </div>
 
+      {/* Clinical & Regulatory Medical Disclaimer */}
+      <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-5 text-xs text-slate-600 space-y-2">
+        <div className="font-bold text-slate-900 flex items-center space-x-1.5">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <span>Statutory Medical Disclaimer & Limitations</span>
+        </div>
+        <p className="leading-relaxed">
+          This automated self-assessment provides preliminary educational guidance strictly based on National Blood Transfusion Council (NBTC) and Drugs and Cosmetics Act parameters. Automated algorithms and software tools <strong>cannot independently certify medical eligibility</strong>. Final clinical suitability must be assessed and certified on-site by a qualified, registered Medical Officer at an authorized blood bank or mobile donation camp before phlebotomy.
+        </p>
+      </div>
     </div>
   );
 }

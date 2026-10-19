@@ -157,15 +157,15 @@ export default function Home() {
               <div className="pt-4 flex flex-wrap items-center justify-center lg:justify-start gap-6 text-xs text-slate-500 font-semibold">
                 <div className="flex items-center space-x-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                  <span>100% SBTC Verified Donors</span>
+                  <span>Voluntary Donor Community</span>
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <Zap className="w-4 h-4 text-amber-500" />
-                  <span>Instant SOS SMS Alert</span>
+                  <span>24/7 Emergency Dispatch</span>
                 </div>
                 <div className="flex items-center space-x-1.5">
-                  <Award className="w-4 h-4 text-blue-500" />
-                  <span>ISO 9001 Certified Protocol</span>
+                  <Droplets className="w-4 h-4 text-red-500" />
+                  <span>Zero-Cost Non-Profit Platform</span>
                 </div>
               </div>
 

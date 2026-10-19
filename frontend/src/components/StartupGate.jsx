@@ -1,270 +1,219 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import RaktOraLogo from './RaktOraLogo';
-import { RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react';
+import { AlertTriangle, RefreshCw, CheckCircle2, ServerCrash, Database } from 'lucide-react';
 
-/**
- * Resolves the canonical readiness URL depending on deployment configuration.
- * Handles both relative '/api' (same-origin / Render unified deployment)
- * and absolute 'https://api.example.com/api' cross-origin deployments.
- */
-function getReadinessUrl() {
+export const ServiceStatusContext = createContext({
+  isLive: false,
+  isReady: false,
+  isChecking: false,
+  checkFailed: false,
+  statusMessage: '',
+  retryCheck: () => {}
+});
+
+export const useServiceStatus = () => useContext(ServiceStatusContext);
+
+function getEndpointUrl(endpoint) {
   const envUrl = import.meta.env.VITE_API_URL;
   if (!envUrl || envUrl === '/api') {
-    return '/ready';
+    return endpoint;
   }
-  // Remove trailing /api or / from configured baseURL to hit /ready
   const normalized = envUrl.replace(/\/api\/?$/, '').replace(/\/+$/, '');
-  return `${normalized}/ready`;
+  return `${normalized}${endpoint}`;
 }
 
-/**
- * Computes backoff delay (in ms) given the current attempt number.
- * Attempt 1: 1000ms, Attempt 2: 2000ms, Attempt 3: 3000ms, Attempt 4: 4000ms, Max: 5000ms
- */
-function getBackoffDelay(attempt) {
-  const delaySec = Math.min(attempt, 5);
-  return delaySec * 1000;
-}
-
-const MAX_WAIT_TIME_MS = 75000; // 75 seconds overall maximum timeout
-const PER_REQUEST_TIMEOUT_MS = 5000; // 5 seconds per probe
+const MAX_PROBE_ATTEMPTS = 4;
+const BASE_DELAYS = [1000, 2000, 4000, 8000];
 
 export default function StartupGate({ children }) {
-  const [isReady, setIsReady] = useState(false);
-  const [hasTimedOut, setHasTimedOut] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [isProbing, setIsProbing] = useState(false);
+  const [isLive, setIsLive] = useState(true); // Optimistic: Shell renders immediately
+  const [isReady, setIsReady] = useState(true);
+  const [isChecking, setIsChecking] = useState(true);
+  const [checkFailed, setCheckFailed] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('Connecting to RaktOra services...');
+  const [showBanner, setShowBanner] = useState(false);
 
-  const isReadyRef = useRef(false);
-  const attemptCountRef = useRef(0);
-  const startTimeRef = useRef(Date.now());
-  const activeAbortControllerRef = useRef(null);
+  const attemptRef = useRef(0);
   const timerRef = useRef(null);
-  const tickIntervalRef = useRef(null);
+  const abortControllerRef = useRef(null);
   const isMountedRef = useRef(true);
 
-  // Status message strictly based on elapsed waiting time (honest, no fake internal telemetry)
-  const getStatusMessage = (seconds) => {
-    if (seconds < 10) {
-      return 'Connecting to secure services...';
-    } else if (seconds < 30) {
-      return 'Our services are starting up...';
-    } else {
-      return 'Still starting. Thanks for your patience...';
-    }
-  };
-
   const cleanup = useCallback(() => {
-    if (activeAbortControllerRef.current) {
-      activeAbortControllerRef.current.abort();
-      activeAbortControllerRef.current = null;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    if (tickIntervalRef.current) {
-      clearInterval(tickIntervalRef.current);
-      tickIntervalRef.current = null;
-    }
   }, []);
 
-  const probeReadiness = useCallback(async () => {
-    if (!isMountedRef.current || isReadyRef.current) return;
+  const performCheck = useCallback(async () => {
+    if (!isMountedRef.current) return;
 
-    // Check if max overall timeout has been exceeded
-    const totalElapsed = Date.now() - startTimeRef.current;
-    if (totalElapsed >= MAX_WAIT_TIME_MS) {
-      cleanup();
-      if (isMountedRef.current) {
-        setHasTimedOut(true);
-        setIsProbing(false);
-      }
-      return;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
-
-    // Cancel any previous in-flight request
-    if (activeAbortControllerRef.current) {
-      activeAbortControllerRef.current.abort();
-    }
-
     const controller = new AbortController();
-    activeAbortControllerRef.current = controller;
+    abortControllerRef.current = controller;
 
-    // Set timeout to abort this individual attempt
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, PER_REQUEST_TIMEOUT_MS);
-
-    setIsProbing(true);
-    attemptCountRef.current += 1;
+    setIsChecking(true);
 
     try {
-      const url = getReadinessUrl();
-      const response = await fetch(url, {
+      // 1. Distinct Liveness Probe (Does Express process respond?)
+      const healthUrl = getEndpointUrl('/health');
+      const healthRes = await fetch(healthUrl, {
         method: 'GET',
         headers: { Accept: 'application/json' },
         signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
+      }).catch(() => null);
 
       if (!isMountedRef.current) return;
 
-      if (response.status === 200) {
-        const data = await response.json().catch(() => ({}));
+      if (!healthRes || !healthRes.ok) {
+        // Backend process is completely unreachable
+        setIsLive(false);
+        setIsReady(false);
+        setStatusMessage('Backend service offline or unreachable. Informational pages remain accessible.');
+        setShowBanner(true);
+        scheduleNextProbe();
+        return;
+      }
+
+      setIsLive(true);
+
+      // 2. Distinct Readiness Probe (Is database connection ready?)
+      const readyUrl = getEndpointUrl('/ready');
+      const readyRes = await fetch(readyUrl, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal
+      }).catch(() => null);
+
+      if (!isMountedRef.current) return;
+
+      if (readyRes && readyRes.ok) {
+        const data = await readyRes.json().catch(() => ({}));
         if (data.status === 'ready' || data.status === 'ok') {
-          cleanup();
-          isReadyRef.current = true;
           setIsReady(true);
+          setShowBanner(false);
+          setIsChecking(false);
+          setCheckFailed(false);
+          cleanup();
           return;
         }
       }
 
-      // Backend responded but not yet ready (e.g. 503 or waking up)
+      // Live but database unready (e.g. 503 during cold-start or connection wait)
+      setIsReady(false);
+      setStatusMessage('Backend online, but database connection is initializing.');
+      setShowBanner(true);
       scheduleNextProbe();
-    } catch (err) {
-      clearTimeout(timeoutId);
-      if (!isMountedRef.current) return;
 
-      // Network error, connection refused, or aborted probe -> retry with backoff
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setIsLive(false);
+      setIsReady(false);
+      setStatusMessage('Unable to connect to backend service.');
+      setShowBanner(true);
       scheduleNextProbe();
     }
   }, [cleanup]);
 
   const scheduleNextProbe = useCallback(() => {
-    if (!isMountedRef.current || isReadyRef.current) return;
+    if (!isMountedRef.current) return;
 
-    const delay = getBackoffDelay(attemptCountRef.current);
+    attemptRef.current += 1;
+    if (attemptRef.current >= MAX_PROBE_ATTEMPTS) {
+      setIsChecking(false);
+      setCheckFailed(true);
+      cleanup();
+      return;
+    }
+
+    const delay = BASE_DELAYS[attemptRef.current - 1] || 8000;
     timerRef.current = setTimeout(() => {
-      probeReadiness();
+      performCheck();
     }, delay);
-  }, [probeReadiness]);
+  }, [cleanup, performCheck]);
 
-  const startReadinessSequence = useCallback(() => {
+  const retryCheck = useCallback(() => {
     cleanup();
-    isReadyRef.current = false;
-    setIsReady(false);
-    setHasTimedOut(false);
-    setElapsedSeconds(0);
-    attemptCountRef.current = 0;
-    startTimeRef.current = Date.now();
-
-    // Start 1-second interval ticker for UI elapsed time tracking
-    tickIntervalRef.current = setInterval(() => {
-      if (!isMountedRef.current) return;
-      const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000);
-      setElapsedSeconds(elapsed);
-
-      if (Date.now() - startTimeRef.current >= MAX_WAIT_TIME_MS) {
-        cleanup();
-        setHasTimedOut(true);
-        setIsProbing(false);
-      }
-    }, 1000);
-
-    // Initial immediate probe
-    probeReadiness();
-  }, [cleanup, probeReadiness]);
+    attemptRef.current = 0;
+    setCheckFailed(false);
+    setIsChecking(true);
+    performCheck();
+  }, [cleanup, performCheck]);
 
   useEffect(() => {
     isMountedRef.current = true;
-    startReadinessSequence();
+    performCheck();
 
     return () => {
       isMountedRef.current = false;
       cleanup();
     };
-  }, [startReadinessSequence, cleanup]);
+  }, [performCheck, cleanup]);
 
-  // If backend is verified ready, render the application
-  if (isReady) {
-    return <>{children}</>;
-  }
-
-  // If timeout occurred, show user-friendly recovery UI
-  if (hasTimedOut) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-950 to-slate-900 flex items-center justify-center p-4 selection:bg-red-500 selection:text-white">
-        <div className="max-w-md w-full bg-slate-900/80 border border-slate-800 rounded-2xl shadow-2xl p-8 backdrop-blur-xl text-center">
-          <div className="mx-auto w-16 h-16 bg-red-950/60 border border-red-800/60 rounded-2xl flex items-center justify-center mb-6 text-red-400">
-            <AlertCircle className="w-8 h-8" />
-          </div>
-
-          <h1 className="text-2xl font-bold text-slate-100 mb-2 tracking-tight">
-            Connection Timeout
-          </h1>
-
-          <p className="text-slate-400 text-sm leading-relaxed mb-8">
-            We're having trouble connecting to RaktOra right now. Please try again.
-          </p>
-
-          <button
-            onClick={startReadinessSequence}
-            className="w-full inline-flex items-center justify-center space-x-2 py-3.5 px-6 rounded-xl font-semibold text-white bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 shadow-lg shadow-red-900/30 active:scale-[0.98] transition duration-200"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Try Again</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Branded RaktOra Startup & Cold-Start Screen
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex flex-col items-center justify-center p-6 select-none relative overflow-hidden">
-      {/* Subtle Background Glow Elements */}
-      <div className="absolute w-96 h-96 bg-red-600/10 rounded-full blur-3xl -top-20 -left-20 pointer-events-none animate-pulse" style={{ animationDuration: '6s' }} />
-      <div className="absolute w-96 h-96 bg-rose-600/10 rounded-full blur-3xl -bottom-20 -right-20 pointer-events-none animate-pulse" style={{ animationDuration: '8s' }} />
-
-      <div className="max-w-md w-full flex flex-col items-center text-center relative z-10">
-        {/* Animated Brand Logo with Pulsing Halo */}
-        <div className="relative mb-8 flex items-center justify-center">
-          <div className="absolute inset-0 rounded-full bg-red-600/20 blur-xl scale-125 motion-safe:animate-ping" style={{ animationDuration: '3s' }} />
-          <div className="relative p-3 bg-slate-900/90 border border-slate-800/80 rounded-3xl shadow-2xl backdrop-blur-md">
-            <RaktOraLogo size={72} showText={false} />
-          </div>
-        </div>
-
-        {/* Brand Name */}
-        <div className="mb-6">
-          <span className="text-3xl font-black tracking-tight text-white inline-flex items-center">
-            Rakt<span className="text-red-500">Ora</span>
-          </span>
-          <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold mt-1">
-            National Voluntary Blood Network
-          </div>
-        </div>
-
-        {/* Primary Heading */}
-        <h1 className="text-xl md:text-2xl font-bold text-slate-100 mb-2.5 tracking-tight">
-          Starting RaktOra securely...
-        </h1>
-
-        {/* Supporting Text */}
-        <p className="text-slate-400 text-sm leading-relaxed max-w-sm mb-8">
-          Our services are waking up. This can take a moment on the first visit.
-        </p>
-
-        {/* Accessible Dynamic Status Message */}
+    <ServiceStatusContext.Provider
+      value={{
+        isLive,
+        isReady,
+        isChecking,
+        checkFailed,
+        statusMessage,
+        retryCheck
+      }}
+    >
+      {/* Non-blocking Connection Notice Banner */}
+      {showBanner && (
         <div
           role="status"
           aria-live="polite"
-          className="w-full bg-slate-900/70 border border-slate-800 rounded-xl py-3 px-4 flex items-center justify-center space-x-3 shadow-inner"
+          className={`w-full text-xs font-semibold px-4 py-2.5 flex items-center justify-between border-b transition-colors ${
+            !isLive
+              ? 'bg-amber-950 text-amber-200 border-amber-800'
+              : 'bg-slate-900 text-slate-200 border-slate-800'
+          }`}
         >
-          <div className="w-2.5 h-2.5 rounded-full bg-red-500 motion-safe:animate-pulse" />
-          <span className="text-sm font-medium text-slate-300">
-            {getStatusMessage(elapsedSeconds)}
-          </span>
-        </div>
+          <div className="flex items-center space-x-2 max-w-4xl mx-auto flex-1">
+            {!isLive ? (
+              <ServerCrash className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            ) : (
+              <Database className="w-4 h-4 text-sky-400 flex-shrink-0" />
+            )}
+            <span className="truncate">{statusMessage}</span>
+            {isChecking && (
+              <span className="inline-flex items-center text-slate-400 text-[11px] ml-2">
+                <RefreshCw className="w-3 h-3 animate-spin mr-1" />
+                Connecting...
+              </span>
+            )}
+          </div>
 
-        {/* Security & Reliability Badge */}
-        <div className="mt-12 flex items-center space-x-1.5 text-xs text-slate-600">
-          <ShieldCheck className="w-4 h-4 text-emerald-500/80" />
-          <span>Encrypted Session & FEFO Blood Inventory Engine</span>
+          <div className="flex items-center space-x-2 flex-shrink-0 ml-4">
+            <button
+              onClick={retryCheck}
+              disabled={isChecking}
+              className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold transition disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
+              <span>Retry</span>
+            </button>
+            <button
+              onClick={() => setShowBanner(false)}
+              className="px-2 py-0.5 text-slate-400 hover:text-white text-xs"
+              title="Dismiss banner"
+            >
+              ✕
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+
+      {/* The Application Shell Renders Immediately without being blocked */}
+      {children}
+    </ServiceStatusContext.Provider>
   );
 }

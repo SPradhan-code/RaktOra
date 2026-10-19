@@ -15,7 +15,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    // Attempt fetching current session
+    // Only attempt fetching if token exists
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
     getCurrentUser()
       .then(res => {
         if (res && res.success) {
@@ -24,8 +29,10 @@ export const AuthProvider = ({ children }) => {
           logout();
         }
       })
-      .catch(() => {
-        if (token) {
+      .catch((err) => {
+        // Clear token only if server explicitly rejected auth
+        const errMsg = String(err?.message || '');
+        if (errMsg.includes('401') || errMsg.includes('token') || errMsg.includes('Unauthorized') || errMsg.includes('expired')) {
           localStorage.removeItem('bloodconnect_token');
           setToken(null);
           setUser(null);

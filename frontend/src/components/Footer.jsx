@@ -22,10 +22,10 @@ export default function Footer() {
             </p>
             <div className="flex items-center space-x-3 pt-2 text-xs text-slate-400">
               <span className="flex items-center bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-                <Award className="w-4 h-4 text-amber-400 mr-1.5" /> ISO 9001 Certified Protocol
+                <Heart className="w-4 h-4 text-red-400 mr-1.5" /> 100% Voluntary Network
               </span>
               <span className="flex items-center bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-                <Shield className="w-4 h-4 text-emerald-400 mr-1.5" /> 100% Verified Donors
+                <Shield className="w-4 h-4 text-emerald-400 mr-1.5" /> Non-Profit & Zero-Cost
               </span>
             </div>
           </div>
@@ -82,8 +82,8 @@ export default function Footer() {
               <li className="flex items-start space-x-2.5">
                 <MapPin className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
                 <div>
-                  <div className="font-semibold text-white">Headquarters</div>
-                  <div className="text-xs text-slate-400">1 Red Cross Road, Connaught Place, New Delhi, India</div>
+                  <div className="font-semibold text-white">Platform Coordination</div>
+                  <div className="text-xs text-slate-400">National Voluntary Digital Platform (Pan-India)</div>
                 </div>
               </li>
             </ul>

@@ -61,8 +61,8 @@ export default function Contact() {
                   <MapPin className="w-5 h-5 text-red-400" />
                 </div>
                 <div>
-                  <div className="font-bold text-white text-sm">National Operations Centre</div>
-                  <div className="text-slate-300 text-xs mt-0.5">1 Red Cross Road, Connaught Place, New Delhi 110001</div>
+                  <div className="font-bold text-white text-sm">Digital Coordination Helpdesk</div>
+                  <div className="text-slate-300 text-xs mt-0.5">National Voluntary Blood Support Network (Pan-India)</div>
                 </div>
               </div>
             </div>

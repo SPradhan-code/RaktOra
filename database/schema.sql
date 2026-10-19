@@ -44,9 +44,13 @@ CREATE TABLE Users (
     email_verified TINYINT(1) NOT NULL DEFAULT 0,
     phone_verified TINYINT(1) NOT NULL DEFAULT 0,
     aadhaar_verified TINYINT(1) NOT NULL DEFAULT 0,
+    digilocker_verified TINYINT(1) NOT NULL DEFAULT 0,
     email_verified_at DATETIME NULL,
     phone_verified_at DATETIME NULL,
     aadhaar_verified_at DATETIME NULL,
+    digilocker_verified_at DATETIME NULL,
+    verification_provider VARCHAR(50) NOT NULL DEFAULT 'EMAIL_PASSWORD_REGISTRATION',
+    verification_reference VARCHAR(255) NULL,
     latitude DECIMAL(10, 7) NULL,
     longitude DECIMAL(10, 7) NULL,
     emergency_alerts_enabled TINYINT(1) NOT NULL DEFAULT 1,
@@ -56,7 +60,8 @@ CREATE TABLE Users (
     
     INDEX idx_users_email (email),
     INDEX idx_users_role (role),
-    INDEX idx_users_location (state, city)
+    INDEX idx_users_location (state, city),
+    INDEX idx_users_verification_ref (verification_provider, verification_reference)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================

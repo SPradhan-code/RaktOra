@@ -12,12 +12,16 @@ const { logAuditAction } = require('../utils/auditLogger');
 const { sendEmailOtp } = require('../services/emailService');
 const { sanitizeIndianPhone, sendSmsOtp } = require('../services/smsService');
 const {
+  isDigiLockerConfigured,
+  getDigiLockerStatus,
   generateCodeVerifier,
   generateCodeChallenge,
   generateStateToken,
+  hashProviderIdentity,
   getDigiLockerAuthUrl,
   exchangeDigiLockerCode,
-  fetchDigiLockerUserDocuments
+  fetchDigiLockerUserDocuments,
+  revokeDigiLockerToken
 } = require('../services/digilockerService');
 const features = require('../config/features');
 
@@ -378,11 +382,22 @@ router.post('/verify-otp', async (req, res, next) => {
 });
 
 // ============================================================================
-// 5. DIGILOCKER OAUTH 2.0 VERIFICATION ENDPOINTS
+// 5. GENUINE DIGILOCKER OAUTH 2.0 IDENTITY VERIFICATION ENDPOINTS
 // ============================================================================
 
 /**
- * Initiates official DigiLocker OAuth 2.0 verification flow
+ * Public discovery endpoint for DigiLocker service status & onboarding boundary
+ * GET /api/auth/digilocker/status
+ */
+router.get('/digilocker/status', (req, res) => {
+  return res.json({
+    success: true,
+    ...getDigiLockerStatus()
+  });
+});
+
+/**
+ * Initiates official DigiLocker OAuth 2.0 PKCE verification flow
  * GET /api/auth/digilocker/initiate
  */
 router.get('/digilocker/initiate', (req, res) => {
@@ -395,19 +410,29 @@ router.get('/digilocker/initiate', (req, res) => {
       });
     }
 
+    if (!isDigiLockerConfigured()) {
+      return res.status(503).json({
+        success: false,
+        configured: false,
+        message: 'DigiLocker authentication setup is pending authorized provider access and credentials. No mock or fake identity verification is permitted.',
+        status: getDigiLockerStatus()
+      });
+    }
+
     const state = generateStateToken();
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
 
-    // Store in-memory with 10 minute expiration
+    // Store state and codeVerifier in-memory with 10-minute expiration
     digilockerStateStore.set(state, {
       codeVerifier,
       created_at: Date.now()
     });
 
-    // Cleanup expired states (> 10 mins)
+    // Cleanup expired state entries older than 10 minutes
+    const now = Date.now();
     for (const [sKey, val] of digilockerStateStore.entries()) {
-      if (Date.now() - val.created_at > 10 * 60 * 1000) {
+      if (now - val.created_at > 10 * 60 * 1000) {
         digilockerStateStore.delete(sKey);
       }
     }
@@ -415,20 +440,25 @@ router.get('/digilocker/initiate', (req, res) => {
     const authRes = getDigiLockerAuthUrl(state, codeChallenge);
 
     if (!authRes.success) {
-      return res.status(400).json({
+      return res.status(503).json({
         success: false,
-        message: authRes.error
+        configured: false,
+        message: authRes.error,
+        status: authRes.statusDetails || getDigiLockerStatus()
       });
     }
 
     return res.json({
       success: true,
+      configured: true,
       auth_url: authRes.auth_url,
-      state: state,
-      devMode: !!authRes.devMode
+      state: state
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to initiate DigiLocker verification.' });
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to initiate DigiLocker authentication session.'
+    });
   }
 });
 
@@ -438,69 +468,103 @@ router.get('/digilocker/initiate', (req, res) => {
  */
 router.get('/digilocker/callback', async (req, res) => {
   const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+
   if (!features.ENABLE_DIGILOCKER) {
-    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent('This integration is not enabled in the current deployment.')}`);
+    return res.redirect(`${frontendUrl}/login?digilocker_error=${encodeURIComponent('This integration is not enabled in the current deployment.')}`);
+  }
+
+  if (!isDigiLockerConfigured()) {
+    const errorMsg = 'DigiLocker authentication is unconfigured. Authorized partner credentials are required.';
+    return res.redirect(`${frontendUrl}/login?digilocker_error=${encodeURIComponent(errorMsg)}`);
   }
 
   const { code, state, error, error_description } = req.query;
 
-  // 1. Handle DigiLocker user cancellation / denied consent
+  // 1. Handle user cancellation or provider rejection
   if (error || error_description) {
     const errorMsg = error_description || error || 'User cancelled DigiLocker authorization.';
-    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent(errorMsg)}`);
+    return res.redirect(`${frontendUrl}/login?digilocker_error=${encodeURIComponent(errorMsg)}`);
   }
 
   if (!state || !code) {
-    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent('Missing authorization code or state parameter.')}`);
+    return res.redirect(`${frontendUrl}/login?digilocker_error=${encodeURIComponent('Missing authorization code or state parameter.')}`);
   }
 
-  // 2. Validate CSRF State Token
+  // 2. Cryptographic State Verification (Single-use CSRF mitigation)
   const storedState = digilockerStateStore.get(state);
   if (!storedState) {
-    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent('Invalid or expired DigiLocker session state. Please try again.')}`);
+    return res.redirect(`${frontendUrl}/login?digilocker_error=${encodeURIComponent('Invalid or expired authentication session state. Please try again.')}`);
   }
 
   const { codeVerifier } = storedState;
   digilockerStateStore.delete(state);
 
-  // 3. Perform Token Exchange with DigiLocker API
+  // 3. Perform Token Exchange with DigiLocker API (Backend-only)
   const tokenRes = await exchangeDigiLockerCode(code, codeVerifier);
 
   if (!tokenRes.success) {
-    return res.redirect(`${frontendUrl}/register?digilocker_error=${encodeURIComponent(tokenRes.error)}`);
+    return res.redirect(`${frontendUrl}/login?digilocker_error=${encodeURIComponent(tokenRes.error)}`);
   }
 
-  // 4. Retrieve Document Verification Metadata (without storing plaintext sensitive data)
-  const docRes = await fetchDigiLockerUserDocuments(tokenRes.access_token);
-  const refCode = tokenRes.digilocker_id || `DIGILOCKER-${Date.now()}`;
+  const identityHash = tokenRes.identity_hash;
   const holderName = tokenRes.name || 'DigiLocker Verified User';
 
-  return res.redirect(
-    `${frontendUrl}/register?digilocker_verified=true&holder_name=${encodeURIComponent(holderName)}&reference=${encodeURIComponent(refCode)}`
-  );
-});
-
-/**
- * Controlled Development Mode Callback (only enabled when DIGILOCKER_DEV_MODE=true)
- * GET /api/auth/digilocker/dev-callback
- */
-router.get('/digilocker/dev-callback', (req, res) => {
-  if (!features.ENABLE_DIGILOCKER || process.env.DIGILOCKER_DEV_MODE !== 'true') {
-    return res.status(400).json({
-      success: false,
-      enabled: false,
-      message: 'This integration is not enabled in the current deployment.'
-    });
+  if (!identityHash) {
+    return res.redirect(`${frontendUrl}/login?digilocker_error=${encodeURIComponent('Provider response did not contain an authoritative identity reference.')}`);
   }
 
-  console.log('[DIGILOCKER DEV MODE] Simulating DigiLocker authorization redirect callback.');
-  const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
-  const holderName = 'DigiLocker Dev User';
-  const reference = `DIGILOCKER-DEV-${Date.now()}`;
+  try {
+    // 4. Stable Deduplication: Check if account already exists with this authoritative identity reference
+    const existingUser = await queryOne(
+      'SELECT id, full_name, email, role, phone, state, city, pincode, is_verified, account_status, locked_until FROM Users WHERE verification_provider = "DIGILOCKER" AND verification_reference = ?',
+      [identityHash]
+    );
 
-  return res.redirect(
-    `${frontendUrl}/register?digilocker_verified=true&dev_mode=true&holder_name=${encodeURIComponent(holderName)}&reference=${encodeURIComponent(reference)}`
-  );
+    if (existingUser) {
+      if (existingUser.account_status === 'suspended') {
+        return res.redirect(`${frontendUrl}/login?digilocker_error=${encodeURIComponent('This account has been suspended. Please contact system support.')}`);
+      }
+
+      // Existing user found -> Create genuine RaktOra session
+      const token = jwt.sign(
+        { id: existingUser.id, email: existingUser.email, role: existingUser.role, full_name: existingUser.full_name },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      res.setHeader('Set-Cookie', `token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`);
+
+      await logAuditAction({
+        actorUserId: existingUser.id,
+        action: 'digilocker_sso_login_success',
+        entityType: 'User',
+        entityId: existingUser.id,
+        ipAddress: req.ip
+      });
+
+      return res.redirect(`${frontendUrl}/login?digilocker_token=${encodeURIComponent(token)}&digilocker_user=${encodeURIComponent(JSON.stringify(existingUser))}`);
+    }
+
+    // 5. New User: Issue a short-lived cryptographically signed DigiLocker Claim Token
+    // Prevents arbitrary spoofing of digilocker_verified flag in register endpoint
+    const claimToken = jwt.sign(
+      {
+        type: 'DIGILOCKER_VERIFIED_CLAIM',
+        identity_hash: identityHash,
+        holder_name: holderName,
+        verified: true
+      },
+      JWT_SECRET,
+      { expiresIn: '30m' }
+    );
+
+    return res.redirect(
+      `${frontendUrl}/register?digilocker_claim=${encodeURIComponent(claimToken)}&holder_name=${encodeURIComponent(holderName)}&reference=${encodeURIComponent(identityHash)}`
+    );
+  } catch (dbErr) {
+    console.error('[DIGILOCKER CALLBACK DB ERROR]:', dbErr.message);
+    return res.redirect(`${frontendUrl}/login?digilocker_error=${encodeURIComponent('Authentication processing error. Please try again.')}`);
+  }
 });
 
 // ============================================================================
@@ -590,9 +654,39 @@ router.post('/register', async (req, res, next) => {
     const isEmailVerified = email_verified ? 1 : 0;
     const isPhoneVerified = phone_verified ? 1 : 0;
     const isAadhaarVerified = aadhaar_verified ? 1 : 0;
-    const isDigiLockerVerified = digilocker_verified ? 1 : 0;
-    const providerName = verification_provider || 'EMAIL_PASSWORD_REGISTRATION';
-    const providerRef = verification_reference || 'STANDARD-REGISTERED';
+    let isDigiLockerVerified = 0;
+    let providerName = 'EMAIL_PASSWORD_REGISTRATION';
+    let providerRef = 'STANDARD-REGISTERED';
+
+    // Enforce cryptographic verification for DigiLocker claims (No unverified assertion accepted)
+    if (req.body.digilocker_claim) {
+      try {
+        const decodedClaim = jwt.verify(req.body.digilocker_claim, JWT_SECRET);
+        if (decodedClaim && decodedClaim.type === 'DIGILOCKER_VERIFIED_CLAIM' && decodedClaim.identity_hash) {
+          // Stable identity deduplication check
+          const existingRef = await queryOne(
+            'SELECT id FROM Users WHERE verification_provider = "DIGILOCKER" AND verification_reference = ?',
+            [decodedClaim.identity_hash]
+          );
+
+          if (existingRef) {
+            return res.status(400).json({
+              success: false,
+              message: 'A RaktOra account is already registered with this DigiLocker identity. Please sign in instead.'
+            });
+          }
+
+          isDigiLockerVerified = 1;
+          providerName = 'DIGILOCKER';
+          providerRef = decodedClaim.identity_hash;
+        }
+      } catch (claimErr) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid or expired DigiLocker verification token. Please re-authenticate via DigiLocker.'
+        });
+      }
+    }
 
     // Securely Hash Password
     const passwordHash = await bcrypt.hash(password, 10);

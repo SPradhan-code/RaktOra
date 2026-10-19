@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { User, Mail, Phone, Lock, MapPin, Building2, Droplets, ShieldCheck, CheckCircle2, KeyRound, ShieldAlert, FileText, Cpu, Upload, Smartphone, ExternalLink } from 'lucide-react';
+import { User, Mail, Phone, Lock, MapPin, Building2, Droplets, ShieldCheck, CheckCircle2, KeyRound, ShieldAlert, FileText, Cpu, Upload, Smartphone, ExternalLink, Info } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { INDIAN_STATES, getCitiesForState } from '../data/indianStatesAndCities';
-import { sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, initiateDigiLockerVerification } from '../services/api';
+import { sendEmailOtp, verifyEmailOtp, sendPhoneOtp, verifyPhoneOtp, initiateDigiLockerVerification, getDigiLockerStatus } from '../services/api';
 import RaktOraLogo from '../components/RaktOraLogo';
 
 const GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -39,7 +39,15 @@ export default function Register() {
     admin_secret: ''
   });
 
-  // Verification States (User can choose either Email or Phone SMS)
+  // Genuine DigiLocker Identity States
+  const [digilockerClaim, setDigilockerClaim] = useState(null);
+  const [digilockerVerified, setDigilockerVerified] = useState(false);
+  const [digilockerHolderName, setDigilockerHolderName] = useState('');
+  const [digilockerLoading, setDigilockerLoading] = useState(false);
+  const [showDigiLockerModal, setShowDigiLockerModal] = useState(false);
+  const [digilockerStatus, setDigilockerStatus] = useState(null);
+
+  // Verification States (Email / Phone)
   const [verificationMethod, setVerificationMethod] = useState('email');
   const [emailSent, setEmailSent] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
@@ -53,9 +61,6 @@ export default function Register() {
   const [phoneLoading, setPhoneLoading] = useState(false);
   const [phoneCooldown, setPhoneCooldown] = useState(0);
 
-  // Aadhaar Offline e-KYC States
-  const [aadhaarFile, setAadhaarFile] = useState(null);
-  const [aadhaarShareCode, setAadhaarShareCode] = useState('');
   const [aadhaarVerified, setAadhaarVerified] = useState(false);
   const [aadhaarLoading, setAadhaarLoading] = useState(false);
   const [aadhaarHolderName, setAadhaarHolderName] = useState('');
@@ -79,31 +84,29 @@ export default function Register() {
     return () => clearInterval(timer);
   }, [phoneCooldown]);
 
-  // DigiLocker OAuth Callback Listener
+  // Genuine DigiLocker OAuth Callback Listener
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const digilockerVerified = params.get('digilocker_verified');
-    const digilockerError = params.get('digilocker_error');
-    const holderName = params.get('holder_name');
-    const reference = params.get('reference');
+    const claim = searchParams.get('digilocker_claim');
+    const holderName = searchParams.get('holder_name');
+    const reference = searchParams.get('reference');
+    const error = searchParams.get('digilocker_error');
 
-    if (digilockerVerified === 'true') {
-      setAadhaarVerified(true);
-      setAadhaarHolderName(holderName || 'DigiLocker Verified User');
+    if (claim) {
+      setDigilockerClaim(claim);
+      setDigilockerVerified(true);
+      setDigilockerHolderName(holderName || 'Verified Citizen');
       setFormData(prev => ({
         ...prev,
-        govt_id: reference || 'DIGILOCKER-VERIFIED',
-        digilocker_verified: true,
-        verification_provider: 'DIGILOCKER',
-        verification_reference: reference || 'DIGILOCKER-VERIFIED'
+        full_name: holderName || prev.full_name,
+        govt_id: reference || 'DIGILOCKER-VERIFIED'
       }));
-      showToast(`✓ DigiLocker Identity verified! (${holderName || 'Verified'})`, 'success');
+      showToast(`✓ Identity verified via DigiLocker (${holderName || 'Verified Citizen'})`, 'success');
       window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (digilockerError) {
-      showToast(`DigiLocker Verification Failed: ${digilockerError}`, 'error');
+    } else if (error) {
+      showToast(`DigiLocker Error: ${decodeURIComponent(error)}`, 'error');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, []);
+  }, [searchParams, showToast]);
 
   const handleStateChange = (newSt) => {
     const cities = getCitiesForState(newSt);
@@ -198,26 +201,33 @@ export default function Register() {
     }
   };
 
-  // 3. DigiLocker Identity Verification Handler
+  // 3. Genuine DigiLocker Identity Verification Handler
   const handleContinueWithDigiLocker = async () => {
-    setAadhaarLoading(true);
+    setDigilockerLoading(true);
     try {
       const res = await initiateDigiLockerVerification();
       if (res.success && res.auth_url) {
-        if (res.auth_url.startsWith('http://') || res.auth_url.startsWith('https://')) {
-          window.location.href = res.auth_url;
-        } else {
-          // Dev mode local redirect
-          const backendUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '');
-          window.location.href = `${backendUrl}${res.auth_url}`;
-        }
+        window.location.href = res.auth_url;
       } else {
-        showToast(res.message || 'Unable to start DigiLocker verification.', 'error');
+        setDigilockerStatus(res.status || {
+          configured: false,
+          message: res.message || 'DigiLocker authentication is currently pending authorized provider credentials.'
+        });
+        setShowDigiLockerModal(true);
       }
     } catch (err) {
-      showToast(err.message || 'DigiLocker service configuration missing or unavailable.', 'error');
+      try {
+        const statusRes = await getDigiLockerStatus();
+        setDigilockerStatus(statusRes);
+      } catch (statusErr) {
+        setDigilockerStatus({
+          configured: false,
+          message: 'DigiLocker integration is currently awaiting authorized provider onboarding credentials.'
+        });
+      }
+      setShowDigiLockerModal(true);
     } finally {
-      setAadhaarLoading(false);
+      setDigilockerLoading(false);
     }
   };
 
@@ -225,27 +235,11 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    /* VERIFICATION ENFORCEMENT COMMENTED OUT PER USER REQUEST
-    if (!emailVerified && !phoneVerified) {
-      showToast('Please verify either your Email address or Phone number before completing registration', 'error');
-      return;
-    }
-    */
-
     // Bot Protection CAPTCHA Verification
     if (parseInt(userCaptcha) !== num1 + num2) {
       showToast(`Incorrect Security CAPTCHA answer. What is ${num1} + ${num2}?`, 'error');
       return;
     }
-
-    /* AADHAAR / DIGILOCKER ENFORCEMENT COMMENTED OUT PER USER REQUEST
-    if (role === 'donor') {
-      if (!formData.govt_id || formData.govt_id.trim().length < 5) {
-        showToast('Aadhaar / Govt Photo ID verification is required for voluntary donor registration', 'error');
-        return;
-      }
-    }
-    */
 
     if (role === 'blood_bank') {
       if (!formData.license_number || formData.license_number.trim().length < 5) {
@@ -260,6 +254,7 @@ export default function Register() {
       const payload = {
         ...formData,
         role,
+        digilocker_claim: digilockerClaim || undefined,
         email_verified: emailVerified ? 1 : 0,
         phone_verified: phoneVerified ? 1 : 0,
         aadhaar_verified: aadhaarVerified ? 1 : 0
@@ -349,12 +344,42 @@ export default function Register() {
           </button>
         </div>
 
-        {role === 'admin' && (
+        {role === 'admin' ? (
           <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl flex items-start space-x-2 text-[11px] text-amber-900 font-medium">
             <ShieldAlert className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
             <span>
               <strong>System Administrator Registration Mode:</strong> Requires explicit Admin Passcode. Grants administrative control privileges.
             </span>
+          </div>
+        ) : digilockerVerified ? (
+          <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-center space-x-3 text-emerald-900 text-xs font-semibold">
+            <ShieldCheck className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            <div>
+              <div className="font-bold">✓ Identity Authenticated via DigiLocker</div>
+              <div className="text-[11px] text-emerald-700">Verified identity claim attached for {digilockerHolderName}. No separate SMS OTP required.</div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 p-4 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 text-xs font-bold text-blue-900">
+                <ShieldCheck className="w-4 h-4 text-blue-600" />
+                <span>DigiLocker Identity Verification (Recommended)</span>
+              </div>
+              <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full uppercase">Govt of India</span>
+            </div>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              Verify your identity via official DigiLocker OAuth without requiring a separate SMS OTP.
+            </p>
+            <button
+              type="button"
+              onClick={handleContinueWithDigiLocker}
+              disabled={digilockerLoading}
+              className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-sm transition flex items-center justify-center space-x-2"
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-300" />
+              <span>{digilockerLoading ? 'Connecting to DigiLocker...' : 'Verify with DigiLocker'}</span>
+            </button>
           </div>
         )}
 
@@ -549,6 +574,60 @@ export default function Register() {
           </Link>
         </div>
       </div>
+
+      {/* DigiLocker Status & Onboarding Boundary Modal */}
+      {showDigiLockerModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl border border-slate-100 text-left">
+            <div className="flex items-start space-x-3">
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-2xl text-blue-700 flex-shrink-0">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  DigiLocker Authentication Boundary
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  National Digital Locker System (MeitY, Government of India)
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2.5 text-xs text-slate-700 leading-relaxed">
+              <div className="font-bold text-slate-900 flex items-center space-x-1.5">
+                <Info className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span>Provider Access Status: Pending Authorized Credentials</span>
+              </div>
+              <p>
+                RaktOra operates under strict zero-cost and real-identity guidelines. In accordance with project policy, <strong>mock logins, fake OTPs, and fabricated responses are prohibited</strong>.
+              </p>
+              <div className="pt-1">
+                <strong className="block text-slate-800 mb-1">To enable live DigiLocker integration:</strong>
+                <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-600">
+                  <li>Register organization at <span className="font-mono text-blue-700">partners.digitallocker.gov.in</span> or API Setu.</li>
+                  <li>Submit application for OAuth 2.0 authorization code credentials.</li>
+                  <li>Whitelist static IP address and exact callback URI.</li>
+                  <li>Configure <span className="font-mono text-slate-800">DIGILOCKER_CLIENT_ID</span> and <span className="font-mono text-slate-800">DIGILOCKER_CLIENT_SECRET</span> in server environment.</li>
+                </ol>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Until authorized partner credentials are provided, you may complete standard voluntary registration using email and password.
+            </p>
+
+            <div className="flex space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDigiLockerModal(false)}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2.5 rounded-xl transition"
+              >
+                Understood — Continue Registration
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
